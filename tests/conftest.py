@@ -1,0 +1,30 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Redirect all XDG paths into a per-test temp directory."""
+    state = tmp_path / "state"
+    config = tmp_path / "config"
+    logs = state / "logs"
+    for p in (state, config, logs):
+        p.mkdir(parents=True, exist_ok=True)
+
+    from ignition.core import paths as paths_mod
+
+    monkeypatch.setattr(paths_mod, "state_dir", lambda: state)
+    monkeypatch.setattr(paths_mod, "config_dir", lambda: config)
+    monkeypatch.setattr(paths_mod, "log_dir", lambda: logs)
+    monkeypatch.setattr(paths_mod, "state_file", lambda: state / "state.json")
+    monkeypatch.setattr(paths_mod, "install_id_file", lambda: state / "install_id")
+
+    # Reset the structlog-configured sentinel so the file handler re-binds per test.
+    from ignition.core import logging as logging_mod
+
+    monkeypatch.setattr(logging_mod, "_configured", False)
+
+    return tmp_path

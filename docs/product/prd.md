@@ -50,6 +50,13 @@ Business Goals
 • Lower support burden for environment setup and repair.
 • Demonstrate innovation in internal tooling to leadership.
 Scope and Non‑Goals
+v0.1 Thin Slice (first shippable release)
+The first release deliberately ships a narrow vertical slice to prove the stack and demo the experience:
+• Onboarding wizard — Quick path only (personas + recommended tool bundle).
+• Unified status dashboard — Readiness summary panel.
+• Demo mode (`--demo` flag) — Seeded state for presentations and local testing.
+Every other "In Scope (MVP)" item below lands in subsequent milestones. The full MVP list remains the
+product target; it is simply not all in the first release.
 In Scope (MVP)
 • Guided onboarding flows with quick and custom options.
 • Role‑aware tool recommendations and installations.

@@ -8,10 +8,22 @@ A terminal-native developer onboarding and workspace command centre for the Reac
 
 ## Planned Stack
 
-- **Language:** Python
-- **TUI:** Textual (event-driven reactive framework)
+- **Language:** Python 3.14
+- **TUI:** Textual (reactive attributes + posted messages; `App` / `Screen` / `Widget`)
+- **CLI:** Typer (arg parsing for `--demo`, `--operator`, future subcommands)
+- **Package manager:** uv (`pyproject.toml` + `uv.lock`)
+- **Project layout:** `src/` layout at `src/ignition/`
+- **Schemas:** Pydantic v2 (every schema includes `schema_version: int`)
+- **YAML:** ruamel.yaml (round-trip preserves comments)
+- **Logging:** structlog → JSON
+- **XDG paths:** platformdirs
+- **Async:** Textual `@work` (asyncio); subprocesses via `asyncio.create_subprocess_exec`
+- **Lint/format:** ruff — **Type checker:** ty (Astral's type checker, focused on `src/ignition/core/`)
+- **Tests:** pytest + pytest-asyncio + Textual `Pilot`
 - **Config:** YAML manifests (tools, personas, policies)
-- **State persistence:** JSON at `~/.local/state/ignition/`
+- **State persistence:** JSON at `$XDG_STATE_HOME/ignition/` (resolved via platformdirs)
+- **Supported platforms (v0.1):** macOS + Linux (Ubuntu/Debian). No Windows. No other distros.
+- **Distribution (testers):** `pipx install` from TestPyPI, later PyPI.
 
 ## What It Does
 

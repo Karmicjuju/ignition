@@ -8,19 +8,28 @@ internal modules, data storage, telemetry pipeline and special modes. It is inte
 responsible for building and maintaining Ignition.
 1. Frameworks and Libraries
 Textual
-Textual is the primary TUI framework powering Ignition. It provides a reactive component model,
-keyboard/mouse event handling and view rendering. The architecture is event‑driven: actions trigger
-messages, which update the application state, which automatically triggers view re‑renders. Textual’s
-built‑in support for reactive data binding and async methods enables background tasks such as
-installations and telemetry without explicit command systems.
+Textual is the primary TUI framework powering Ignition. The application is composed as a single `App`
+containing multiple `Screen`s, each built from `Widget`s. State flows through two complementary
+mechanisms: **reactive attributes** on widgets trigger automatic re-renders when their values change, and
+**posted messages** propagate user actions and cross-widget events up the DOM tree for handlers to act
+on. Long-running I/O (installations, health scans, telemetry uploads) runs via Textual’s `@work` workers
+on asyncio, keeping the UI responsive without an explicit command system.
+Application State
+A single pure domain state object (Pydantic v2 model) is the source of truth for persisted state. Widgets
+never mutate it directly; instead, an `AppState` service exposes typed methods that update the model,
+persist it to disk, and post Textual messages for interested widgets to react to. This keeps persistence,
+validation, and UI updates colocated and avoids scattered state mutations.
 Forms and Wizards
-Textual provides composable widget systems for building forms, input validation and multi‑step wizards.
-The application uses a custom form builder built on Textual widgets for onboarding flows, persona
-selection, and settings pages. It supports input validation, accessible navigation and progress indicators.
+Textual’s built-in widgets (`Input`, `Select`, `Checkbox`, `RadioSet`, `Button`) compose into forms and
+multi-step wizards. A small form builder in `src/ignition/ui/forms/` provides declarative form definitions
+with validation, used for onboarding flows, persona selection, and settings.
+CLI Entry Point
+`Typer` parses command-line arguments (e.g. `--demo`, `--operator`) before launching the Textual app.
+Subcommands are added as the tool grows (e.g. `ignition doctor`, `ignition export-state`).
 YAML / JSON Parsing
-Tool and persona definitions are loaded from YAML or JSON manifests. The application uses a manifest
-loader that watches these files and converts them into internal data structures at runtime. Validations
-ensure that unknown keys or invalid version specifications are flagged.
+Tool and persona definitions are loaded from YAML manifests using `ruamel.yaml` (round-trip loader
+preserves comments for manifest and AWS config editing). Manifests are parsed into Pydantic v2 models;
+unknown keys and invalid version specifications are rejected with clear error messages.
 2. Core Modules
 Ignition is composed of several internal modules organised around responsibilities:
 Module Responsibilities

@@ -1,0 +1,90 @@
+[project]
+name = "ignition"
+version = "0.1.0"
+description = "Terminal-native developer onboarding and workspace command centre for the Reactor ecosystem."
+readme = "README.md"
+requires-python = ">=3.14"
+license = { text = "GPL-3.0-only" }
+authors = [{ name = "Karmicjuju" }]
+keywords = ["tui", "textual", "onboarding", "developer-experience", "reactor"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development",
+    "Topic :: Terminals",
+]
+dependencies = [
+    "textual>=0.80",
+    "typer>=0.12",
+    "pydantic>=2.7",
+    "ruamel.yaml>=0.18",
+    "platformdirs>=4.2",
+    "structlog>=24.1",
+]
+
+[project.scripts]
+ignition = "ignition.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/Karmicjuju/ignition"
+Repository = "https://github.com/Karmicjuju/ignition"
+Issues = "https://github.com/Karmicjuju/ignition/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ignition"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.6",
+    "ty>=0.0.1a1",
+    "textual-dev>=1.5",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+src = ["src"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific
+]
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.ty.src]
+include = ["src"]
+
+[tool.ty.environment]
+python-version = "3.14"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra -q"

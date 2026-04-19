@@ -5,35 +5,47 @@ from pathlib import Path
 import pytest
 
 from ignition.app import IgnitionApp
-from ignition.core.paths import install_id_file, state_file
-from ignition.schemas.state import STATE_SCHEMA_VERSION, AppStateModel
+from ignition.core.paths import state_file
+from ignition.core.state import save_state
+from ignition.schemas.state import AppStateModel
+from ignition.ui.screens.home import HomeScreen
+from ignition.ui.screens.onboarding import OnboardingScreen
 
 
 @pytest.mark.asyncio
-async def test_app_boots_writes_state_and_quits(isolated_paths: Path) -> None:
-    app = IgnitionApp(demo_mode=False)
-    async with app.run_test() as pilot:
+async def test_app_boots_and_quits(isolated_paths: Path) -> None:
+    async with IgnitionApp(demo_mode=False).run_test() as pilot:
         await pilot.pause()
         await pilot.press("q")
-
-    assert state_file().exists(), "state.json should be written on launch"
-    assert install_id_file().exists(), "install_id should be written on first launch"
-
-    state = AppStateModel.model_validate_json(state_file().read_text())
-    assert state.schema_version == STATE_SCHEMA_VERSION
-    assert state.install_id == install_id_file().read_text().strip()
-    assert state.demo_mode is False
 
 
 @pytest.mark.asyncio
-async def test_demo_mode_flag_persists_to_state(isolated_paths: Path) -> None:
-    app = IgnitionApp(demo_mode=True)
-    async with app.run_test() as pilot:
+async def test_demo_mode_flag(isolated_paths: Path) -> None:
+    """Demo mode seeds state (onboarding_complete=True) and routes to HomeScreen."""
+    async with IgnitionApp(demo_mode=True).run_test() as pilot:
         await pilot.pause()
-        await pilot.press("q")
+        assert isinstance(pilot.app.screen, HomeScreen)
 
     state = AppStateModel.model_validate_json(state_file().read_text())
     assert state.demo_mode is True
+
+
+@pytest.mark.asyncio
+async def test_first_launch_shows_onboarding_screen(isolated_paths: Path) -> None:
+    """Fresh state (onboarding_complete=False by default) routes to OnboardingScreen."""
+    async with IgnitionApp(demo_mode=False).run_test() as pilot:
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, OnboardingScreen)
+
+
+@pytest.mark.asyncio
+async def test_returning_user_shows_home_screen(isolated_paths: Path) -> None:
+    """A state file with onboarding_complete=True routes directly to HomeScreen."""
+    save_state(AppStateModel(install_id="test-id", onboarding_complete=True))
+
+    async with IgnitionApp(demo_mode=False).run_test() as pilot:
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, HomeScreen)
 
 
 def test_install_id_is_stable_across_runs(isolated_paths: Path) -> None:

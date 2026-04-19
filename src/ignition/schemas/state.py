@@ -13,3 +13,7 @@ class AppStateModel(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     last_launched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     demo_mode: bool = False
+    onboarding_complete: bool = False
+    onboarding_phase: int = 0
+    selected_personas: list[str] = Field(default_factory=list)
+    accepted_tool_bundle: bool = False

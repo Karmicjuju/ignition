@@ -1,0 +1,22 @@
+schema_version: 1
+key: trivy
+name: Trivy
+description: Vulnerability scanner for containers and other artifacts
+categories: [security, scanning]
+persona_tags: [security]
+managed: true
+version_policy: managed
+requires_sudo: false
+health_check: "trivy --version"
+dependencies: []
+
+install_methods:
+  macos:
+    - method: brew
+      package: trivy
+      cask: false
+  linux:
+    - method: apt
+      package: trivy
+      repo: "https://aquasecurity.github.io/trivy-repo/deb"
+      repo_key_url: "https://aquasecurity.github.io/trivy-repo/deb/public.key"

@@ -1,0 +1,20 @@
+schema_version: 1
+key: git
+name: Git
+description: Distributed version control system
+categories: [vcs, core]
+persona_tags: [backend, frontend, devops, security, contractor]
+managed: false
+version_policy: flexible
+requires_sudo: false
+health_check: "git --version"
+dependencies: []
+
+install_methods:
+  macos:
+    - method: brew
+      package: git
+      cask: false
+  linux:
+    - method: apt
+      package: git

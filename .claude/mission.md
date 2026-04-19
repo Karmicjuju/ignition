@@ -256,3 +256,29 @@ None identified at plan time.
 **Potential risks (not blockers):**
 - Textual chord keybinds (`g t`) are not natively supported. U2 uses `ctrl+t` as a single binding instead. This is documented in a code comment and deferred to a future vim-mode layer.
 - `STATE_SCHEMA_VERSION` bump from 1 → 2 may cause `load_state()` to fail if existing persisted state files exist on a developer's machine. The `isolated_paths` fixture in tests prevents this in CI. For local dev, deleting `$XDG_STATE_HOME/ignition/state.json` is the documented workaround. Migration logic is M3 scope.
+
+---
+
+## Catalog Loading Strategy — Schema Tasks (plan: twinkling-bubbling-gizmo.md)
+
+**Completed: 2026-04-19**
+
+### Schema changes applied
+
+- [x] **S3** — Extend `src/ignition/schemas/catalog.py`
+  - Added `InstallStep` model (method, package, cask, repo, repo_key_url, url, archive_type, binary_name, install_path, global_install)
+  - Added `PlatformInstallMethods` model (macos, linux — both `list[InstallStep]` with `Field(default_factory=list)`)
+  - Modified `ToolInfo`: added `version_policy`, `requires_sudo`, `health_check`, `dependencies`, `install_methods` with defaults; changed `version: str` to `version: str | None = None`
+  - All existing fields preserved; `schema_version` and `install_status` unchanged
+  - schema-guardian: all 6 assertions PASS
+
+- [x] **S4** — Create `src/ignition/schemas/config.py`
+  - New `AppConfigModel` with `CONFIG_SCHEMA_VERSION = 1`
+  - Fields: `catalog_url`, `catalog_max_age_seconds`, `theme`, `density`, `motion`, `automation_level` — all scalar, no mutable defaults
+  - schema-guardian: all 6 assertions PASS
+
+- [x] **S5** — Update `src/ignition/schemas/state.py`
+  - Removed `tool_catalog_cache: list[ToolInfo]` field and `from .catalog import ToolInfo` import
+  - Bumped `STATE_SCHEMA_VERSION` from 2 to 3
+  - Migration strategy: at `load_state()` time, if `schema_version == 2`, drop `tool_catalog_cache` key from the parsed dict before validation and write back at version 3. Implementation is in `core/state.py` (M3 scope for this PR).
+  - schema-guardian: all 6 assertions PASS

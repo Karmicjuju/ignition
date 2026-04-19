@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from ignition.core.catalog_loader import load_bundled, load_local_override, load_remote
 from ignition.core.logging import get_logger
+from ignition.core.paths import catalog_cache_dir, catalog_override_dir, config_file
 from ignition.schemas.catalog import InstallStatus, ToolInfo
 
 
@@ -10,132 +12,42 @@ class CatalogService:
         self._tools: list[ToolInfo] | None = None
 
     def _load_tools(self) -> list[ToolInfo]:
-        """Return the hardcoded stub tool catalogue (12 tools, all 5 personas covered).
+        """Load tools via the three-layer priority chain: override → remote → bundled."""
+        from ignition.schemas.config import AppConfigModel
 
-        # M3: replace with ruamel.yaml manifest load
-        """
-        return [
-            ToolInfo(
-                key="git",
-                name="Git",
-                description="Distributed version control system",
-                version="2.44.0",
-                categories=["vcs", "core"],
-                persona_tags=["backend", "frontend", "devops", "security", "contractor"],
-                managed=False,
-                install_status=InstallStatus.INSTALLED,
-            ),
-            ToolInfo(
-                key="python",
-                name="Python 3",
-                description="General-purpose programming language runtime",
-                version="3.12.3",
-                categories=["language", "core"],
-                persona_tags=["backend", "contractor"],
-                managed=True,
-                install_status=InstallStatus.MISSING,
-            ),
-            ToolInfo(
-                key="docker",
-                name="Docker",
-                description="Container platform for building and running isolated environments",
-                version="26.0.0",
-                categories=["container", "infra"],
-                persona_tags=["backend", "devops"],
-                managed=True,
-                install_status=InstallStatus.MISSING,
-            ),
-            ToolInfo(
-                key="node",
-                name="Node.js",
-                description="JavaScript runtime built on Chrome's V8 engine",
-                version="22.3.0",
-                categories=["language", "core"],
-                persona_tags=["frontend"],
-                managed=True,
-                install_status=InstallStatus.MISSING,
-            ),
-            ToolInfo(
-                key="pnpm",
-                name="pnpm",
-                description="Fast, disk space efficient package manager for Node.js",
-                version="9.1.0",
-                categories=["package-manager"],
-                persona_tags=["frontend"],
-                managed=False,
-                install_status=InstallStatus.MISSING,
-            ),
-            ToolInfo(
-                key="awscli",
-                name="AWS CLI v2",
-                description="Unified command line interface for Amazon Web Services",
-                version="2.15.1",
-                categories=["cloud", "auth"],
-                persona_tags=["backend", "frontend", "devops", "security", "contractor"],
-                managed=True,
-                install_status=InstallStatus.INSTALLED,
-            ),
-            ToolInfo(
-                key="terraform",
-                name="Terraform",
-                description="Infrastructure as code tool for provisioning cloud resources",
-                version="1.8.1",
-                categories=["infra", "iac"],
-                persona_tags=["devops"],
-                managed=True,
-                install_status=InstallStatus.MISSING,
-            ),
-            ToolInfo(
-                key="kubectl",
-                name="kubectl",
-                description="Command line tool for controlling Kubernetes clusters",
-                version="1.30.0",
-                categories=["container", "orchestration"],
-                persona_tags=["devops"],
-                managed=True,
-                install_status=InstallStatus.MISSING,
-            ),
-            ToolInfo(
-                key="helm",
-                name="Helm",
-                description="Package manager for Kubernetes",
-                version="3.14.4",
-                categories=["container", "orchestration"],
-                persona_tags=["devops"],
-                managed=False,
-                install_status=InstallStatus.MISSING,
-            ),
-            ToolInfo(
-                key="trivy",
-                name="Trivy",
-                description="Vulnerability scanner for containers and other artifacts",
-                version="0.51.1",
-                categories=["security", "scanning"],
-                persona_tags=["security"],
-                managed=True,
-                install_status=InstallStatus.MISSING,
-            ),
-            ToolInfo(
-                key="vault",
-                name="HashiCorp Vault CLI",
-                description="Secrets management and data protection tool",
-                version="1.16.1",
-                categories=["security", "secrets"],
-                persona_tags=["security"],
-                managed=True,
-                install_status=InstallStatus.MISSING,
-            ),
-            ToolInfo(
-                key="postgresql-client",
-                name="psql (PostgreSQL)",
-                description="Interactive terminal for PostgreSQL databases",
-                version="16.2",
-                categories=["database", "core"],
-                persona_tags=["backend"],
-                managed=False,
-                install_status=InstallStatus.MISSING,
-            ),
-        ]
+        # Layer 1: local override
+        override = load_local_override(catalog_override_dir())
+        if override is not None:
+            self._log.info("catalog.source", layer="override", count=len(override))
+            return override
+
+        # Layer 2: remote fetch — read config for URL and max_age
+        config_path = config_file()
+        if config_path.exists():
+            try:
+                app_config = AppConfigModel.model_validate_json(
+                    config_path.read_text(encoding="utf-8")
+                )
+            except Exception as exc:
+                self._log.warning("catalog.config_load_failed", reason=str(exc))
+                app_config = AppConfigModel()
+        else:
+            app_config = AppConfigModel()
+
+        if app_config.catalog_url:
+            remote = load_remote(
+                app_config.catalog_url,
+                catalog_cache_dir(),
+                app_config.catalog_max_age_seconds,
+            )
+            if remote is not None:
+                self._log.info("catalog.source", layer="remote", count=len(remote))
+                return remote
+
+        # Layer 3: bundled fallback (never None — raises on corrupt package)
+        bundled = load_bundled()
+        self._log.info("catalog.source", layer="bundled", count=len(bundled))
+        return bundled
 
     def get_all_tools(self) -> list[ToolInfo]:
         """Return the full tool catalogue, loading and caching on first call."""
@@ -175,6 +87,45 @@ class CatalogService:
         ]
         self._log.info("catalog.search", query=query, count=len(result))
         return result
+
+    def refresh_from_remote(self) -> bool:
+        """Attempt a remote catalog fetch and replace in-memory tools if successful.
+
+        Returns True when remote data was fetched, False otherwise.
+        This method is intentionally synchronous so it can be called from a
+        Textual @work(thread=True) worker without requiring an async executor.
+        """
+        from ignition.schemas.config import AppConfigModel
+
+        config_path = config_file()
+        if config_path.exists():
+            try:
+                app_config = AppConfigModel.model_validate_json(
+                    config_path.read_text(encoding="utf-8")
+                )
+            except Exception as exc:
+                self._log.warning("catalog.refresh.config_load_failed", reason=str(exc))
+                return False
+        else:
+            app_config = AppConfigModel()
+
+        if not app_config.catalog_url:
+            self._log.info("catalog.refresh.skipped", reason="no catalog_url configured")
+            return False
+
+        remote = load_remote(
+            app_config.catalog_url,
+            catalog_cache_dir(),
+            # Force a fresh fetch by setting max_age to 0.
+            0,
+        )
+        if remote is None:
+            self._log.info("catalog.refresh.no_data")
+            return False
+
+        self._tools = remote
+        self._log.info("catalog.refresh.updated", count=len(self._tools))
+        return True
 
     def simulate_install(self, tool_key: str) -> ToolInfo | None:
         """Mutate the in-memory install_status of the named tool to INSTALLED.

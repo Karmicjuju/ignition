@@ -31,3 +31,24 @@ def state_file() -> Path:
 
 def install_id_file() -> Path:
     return state_dir() / "install_id"
+
+
+def cache_dir() -> Path:
+    path = Path(_DIRS.user_cache_dir)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def catalog_cache_dir() -> Path:
+    path = cache_dir() / "catalog"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def catalog_override_dir() -> Path:
+    # intentionally does NOT mkdir — its existence is the opt-in signal
+    return config_dir() / "catalog" / "tools"
+
+
+def config_file() -> Path:
+    return config_dir() / "config.json"

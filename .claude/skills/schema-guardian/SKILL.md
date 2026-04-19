@@ -98,6 +98,15 @@ No field is typed as bare `dict` or `list` without a type parameter.
 
 ---
 
+### A7 — Enum classes use `StrEnum`, not `(str, Enum)`
+
+Ruff UP042 rejects `class Foo(str, Enum)` when the project targets Python ≥ 3.11. This project targets Python 3.14, so `StrEnum` from the `enum` module is always available.
+
+**PASS:** Any enum that holds string values inherits from `StrEnum` (e.g., `class Foo(StrEnum)`).
+**On FAIL:** Replace `class Foo(str, Enum)` with `class Foo(StrEnum)` and update the import from `from enum import Enum` to `from enum import StrEnum`.
+
+---
+
 ## Save Memory
 
 After every run, append to:

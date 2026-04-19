@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
+from textual.message import Message
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Header, Input, Label, ListItem, ListView, Static
 
@@ -35,6 +37,9 @@ class ToolCatalogScreen(Screen[None]):
     Allows browsing, searching, and simulating tool installs without touching
     real system state. All mutations are in-memory only (M2 scope).
     """
+
+    class CatalogRefreshed(Message):
+        """Posted when the background remote fetch succeeds and new tool data is available."""
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "app.pop_screen", "Back"),
@@ -203,9 +208,31 @@ class ToolCatalogScreen(Screen[None]):
     # ------------------------------------------------------------------
 
     def on_mount(self) -> None:
-        """Populate category list and tool list after mount."""
+        """Populate category list and tool list after mount, then refresh from remote."""
         self._refresh_category_list()
         self._populate_tool_list(self._catalog.get_all_tools())
+        self._background_refresh()
+
+    # ------------------------------------------------------------------
+    # background remote refresh
+    # ------------------------------------------------------------------
+
+    @work(thread=True)
+    def _background_refresh(self) -> None:
+        """Attempt a remote catalog fetch in a background thread.
+
+        Posts CatalogRefreshed if new data was returned so the UI can
+        repopulate without blocking the event loop.
+        """
+        refreshed = self._catalog.refresh_from_remote()
+        if refreshed:
+            self.post_message(self.CatalogRefreshed())
+
+    def on_catalog_refreshed(self, event: CatalogRefreshed) -> None:
+        """Repopulate the screen when the background refresh delivers new data."""
+        self._refresh_category_list()
+        self._populate_tool_list(self._catalog.get_all_tools())
+        self.notify("Catalog updated from remote.")
 
     # ------------------------------------------------------------------
     # population helpers

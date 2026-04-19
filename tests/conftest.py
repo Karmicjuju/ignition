@@ -11,7 +11,9 @@ def isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     state = tmp_path / "state"
     config = tmp_path / "config"
     logs = state / "logs"
-    for p in (state, config, logs):
+    cache = tmp_path / "cache"
+    catalog_cache = cache / "catalog"
+    for p in (state, config, logs, cache, catalog_cache):
         p.mkdir(parents=True, exist_ok=True)
 
     from ignition.core import paths as paths_mod
@@ -21,6 +23,8 @@ def isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(paths_mod, "log_dir", lambda: logs)
     monkeypatch.setattr(paths_mod, "state_file", lambda: state / "state.json")
     monkeypatch.setattr(paths_mod, "install_id_file", lambda: state / "install_id")
+    monkeypatch.setattr(paths_mod, "cache_dir", lambda: cache)
+    monkeypatch.setattr(paths_mod, "catalog_cache_dir", lambda: catalog_cache)
 
     # Reset the structlog-configured sentinel so the file handler re-binds per test.
     from ignition.core import logging as logging_mod

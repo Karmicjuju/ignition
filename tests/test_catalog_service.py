@@ -3,7 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from ignition.core.catalog import CatalogService
-from ignition.schemas.catalog import InstallStatus
+from ignition.core.catalog_loader import load_bundled, load_local_override, load_remote
+from ignition.schemas.catalog import InstallStatus, ToolInfo
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -16,15 +17,32 @@ def _service(isolated_paths: Path) -> CatalogService:
 
 
 # ---------------------------------------------------------------------------
-# test_get_all_tools_returns_twelve
+# test_get_all_tools_returns_tools
 # ---------------------------------------------------------------------------
 
 
-def test_get_all_tools_returns_twelve(isolated_paths: Path) -> None:
-    """The stub catalogue must contain exactly 12 tools."""
+def test_get_all_tools_returns_tools(isolated_paths: Path) -> None:
+    """The bundled catalogue must return at least one tool.
+
+    We also confirm the count equals the number of YAML files in the bundled
+    data directory (currently 12).
+    """
+    import importlib.resources
+
     svc = _service(isolated_paths)
     tools = svc.get_all_tools()
-    assert len(tools) == 12
+    assert len(tools) >= 1
+
+    # Count YAML files in the bundled package data to cross-check.
+    package_ref = importlib.resources.files("ignition.data.catalog.tools")
+    yaml_count = sum(
+        1
+        for r in package_ref.iterdir()
+        if r.name.endswith(".yaml")  # type: ignore[attr-defined]
+    )
+    assert len(tools) == yaml_count, (
+        f"Expected {yaml_count} tools (one per YAML file), got {len(tools)}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -156,4 +174,120 @@ def test_simulate_install_unknown_key_returns_none(isolated_paths: Path) -> None
     """simulate_install with an unknown key must return None without raising."""
     svc = _service(isolated_paths)
     result = svc.simulate_install("no_such_tool_xyz")
+    assert result is None
+
+
+# ===========================================================================
+# Loader function tests (catalog_loader.py)
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# test_load_local_override_returns_none_when_dir_absent
+# ---------------------------------------------------------------------------
+
+
+def test_load_local_override_returns_none_when_dir_absent(
+    isolated_paths: Path, tmp_path: Path
+) -> None:
+    """load_local_override returns None when given a path that does not exist."""
+    nonexistent = tmp_path / "does_not_exist" / "catalog" / "overrides"
+    result = load_local_override(nonexistent)
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# test_load_local_override_returns_tools_when_valid_yaml
+# ---------------------------------------------------------------------------
+
+
+def test_load_local_override_returns_tools_when_valid_yaml(
+    isolated_paths: Path, tmp_path: Path
+) -> None:
+    """load_local_override returns a list containing the tool when a valid YAML file exists."""
+    override_dir = tmp_path / "overrides"
+    override_dir.mkdir(parents=True, exist_ok=True)
+
+    tool_yaml = """\
+schema_version: 1
+key: mytool
+name: My Tool
+description: A custom override tool for testing
+categories: [testing]
+persona_tags: [backend]
+managed: false
+"""
+    (override_dir / "mytool.yaml").write_text(tool_yaml, encoding="utf-8")
+
+    result = load_local_override(override_dir)
+    assert result is not None
+    assert len(result) == 1
+    assert result[0].key == "mytool"
+    assert isinstance(result[0], ToolInfo)
+
+
+# ---------------------------------------------------------------------------
+# test_load_local_override_skips_invalid_yaml
+# ---------------------------------------------------------------------------
+
+
+def test_load_local_override_skips_invalid_yaml(isolated_paths: Path, tmp_path: Path) -> None:
+    """load_local_override skips unparseable YAML files without raising.
+
+    One valid and one invalid YAML file → result has exactly 1 tool.
+    """
+    override_dir = tmp_path / "overrides"
+    override_dir.mkdir(parents=True, exist_ok=True)
+
+    valid_yaml = """\
+schema_version: 1
+key: goodtool
+name: Good Tool
+description: Valid tool definition for testing
+categories: [testing]
+persona_tags: [backend]
+managed: false
+"""
+    # Invalid: missing required fields (key, name, description, managed).
+    invalid_yaml = """\
+this_is: not a valid ToolInfo at all
+random_garbage: 42
+"""
+    (override_dir / "goodtool.yaml").write_text(valid_yaml, encoding="utf-8")
+    (override_dir / "badtool.yaml").write_text(invalid_yaml, encoding="utf-8")
+
+    result = load_local_override(override_dir)
+    assert result is not None, "Expected a non-None result since one valid tool exists"
+    assert len(result) == 1, f"Expected 1 tool (the valid one), got {len(result)}"
+    assert result[0].key == "goodtool"
+
+
+# ---------------------------------------------------------------------------
+# test_load_bundled_returns_tools
+# ---------------------------------------------------------------------------
+
+
+def test_load_bundled_returns_tools(isolated_paths: Path) -> None:
+    """load_bundled() returns at least one ToolInfo and every item is a ToolInfo."""
+    tools = load_bundled()
+    assert len(tools) >= 1, "load_bundled() returned an empty list"
+    for tool in tools:
+        assert isinstance(tool, ToolInfo), f"Expected ToolInfo, got {type(tool)!r}"
+
+
+# ---------------------------------------------------------------------------
+# test_load_remote_returns_none_on_network_error
+# ---------------------------------------------------------------------------
+
+
+def test_load_remote_returns_none_on_network_error(isolated_paths: Path, tmp_path: Path) -> None:
+    """load_remote returns None on a network failure without raising."""
+    cache = tmp_path / "remote_cache"
+    cache.mkdir(parents=True, exist_ok=True)
+
+    # An invalid URL that will never resolve.
+    result = load_remote(
+        "http://127.0.0.1:0/catalog-index.yaml",
+        cache,
+        max_age_seconds=0,  # always attempt a fresh fetch
+    )
     assert result is None

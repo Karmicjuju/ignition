@@ -1,0 +1,19 @@
+schema_version: 1
+key: awscli
+name: AWS CLI v2
+description: Unified command line interface for Amazon Web Services
+categories: [cloud, auth]
+persona_tags: [backend, frontend, devops, security, contractor]
+managed: true
+version_policy: managed
+requires_sudo: false
+health_check: "aws --version"
+dependencies: []
+
+install_methods:
+  macos:
+    - method: script
+      url: "https://awscli.amazonaws.com/AWSCLIV2.pkg"
+  linux:
+    - method: script
+      url: "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip"

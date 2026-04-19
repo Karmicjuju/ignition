@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import ClassVar
 
 from textual.app import ComposeResult
-from textual.binding import BindingType
+from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Header, Static
@@ -13,7 +13,9 @@ from ignition.ui.screens.catalog import ToolCatalogScreen
 
 
 class HomeScreen(Screen[None]):
-    BINDINGS: ClassVar[list[BindingType]] = [("q", "app.quit", "Quit")]
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("q", "app.quit", "Quit"),
+    ]
 
     DEFAULT_CSS = """
     HomeScreen {
@@ -124,7 +126,12 @@ class HomeScreen(Screen[None]):
         yield Footer()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        from ignition.ui.screens.health import HealthScreen
+
         if event.button.id == "btn-catalog":
             self.app.push_screen(ToolCatalogScreen(self._state))
+            return
+        if event.button.id == "btn-diagnostics":
+            self.app.push_screen(HealthScreen(self._state))
             return
         self.notify("Coming in a future release.", title="Not yet available")

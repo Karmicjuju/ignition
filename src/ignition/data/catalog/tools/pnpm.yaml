@@ -1,0 +1,21 @@
+schema_version: 1
+key: pnpm
+name: pnpm
+description: Fast, disk space efficient package manager for Node.js
+categories: [package-manager]
+persona_tags: [frontend]
+managed: false
+version_policy: flexible
+requires_sudo: false
+health_check: "pnpm --version"
+dependencies: [node]
+
+install_methods:
+  macos:
+    - method: npm
+      package: pnpm
+      global_install: true
+  linux:
+    - method: npm
+      package: pnpm
+      global_install: true

@@ -1,0 +1,22 @@
+schema_version: 1
+key: node
+name: Node.js
+description: JavaScript runtime built on Chrome's V8 engine
+categories: [language, core]
+persona_tags: [frontend]
+managed: true
+version_policy: managed
+requires_sudo: false
+health_check: "node --version"
+dependencies: []
+
+install_methods:
+  macos:
+    - method: brew
+      package: node
+      cask: false
+  linux:
+    - method: apt
+      package: nodejs
+      repo: "https://deb.nodesource.com/node_22.x"
+      repo_key_url: "https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key"

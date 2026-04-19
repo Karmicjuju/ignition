@@ -1,0 +1,20 @@
+schema_version: 1
+key: postgresql-client
+name: psql (PostgreSQL)
+description: Interactive terminal for PostgreSQL databases
+categories: [database, core]
+persona_tags: [backend]
+managed: false
+version_policy: flexible
+requires_sudo: false
+health_check: "psql --version"
+dependencies: []
+
+install_methods:
+  macos:
+    - method: brew
+      package: postgresql
+      cask: false
+  linux:
+    - method: apt
+      package: postgresql-client

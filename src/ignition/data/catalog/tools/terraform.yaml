@@ -1,0 +1,22 @@
+schema_version: 1
+key: terraform
+name: Terraform
+description: Infrastructure as code tool for provisioning cloud resources
+categories: [infra, iac]
+persona_tags: [devops]
+managed: true
+version_policy: managed
+requires_sudo: false
+health_check: "terraform --version"
+dependencies: []
+
+install_methods:
+  macos:
+    - method: brew
+      package: terraform
+      cask: false
+  linux:
+    - method: apt
+      package: terraform
+      repo: "https://apt.releases.hashicorp.com"
+      repo_key_url: "https://apt.releases.hashicorp.com/gpg"

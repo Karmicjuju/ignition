@@ -1,0 +1,22 @@
+schema_version: 1
+key: kubectl
+name: kubectl
+description: Command line tool for controlling Kubernetes clusters
+categories: [container, orchestration]
+persona_tags: [devops]
+managed: true
+version_policy: managed
+requires_sudo: false
+health_check: "kubectl version --client"
+dependencies: []
+
+install_methods:
+  macos:
+    - method: brew
+      package: kubectl
+      cask: false
+  linux:
+    - method: apt
+      package: kubectl
+      repo: "https://pkgs.k8s.io/core:/stable:/v1.30/deb/"
+      repo_key_url: "https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key"

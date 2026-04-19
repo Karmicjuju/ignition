@@ -1,0 +1,27 @@
+schema_version: 1
+key: docker
+name: Docker
+description: Container platform for building and running isolated environments
+categories: [container, infra]
+persona_tags: [backend, devops]
+managed: true
+version_policy: managed
+requires_sudo: false
+health_check: "docker --version"
+dependencies: []
+
+install_methods:
+  macos:
+    - method: brew
+      package: docker
+      cask: true
+  linux:
+    - method: apt
+      package: docker-ce
+      repo: "https://download.docker.com/linux/ubuntu"
+      repo_key_url: "https://download.docker.com/linux/ubuntu/gpg"
+    - method: binary
+      url: "https://download.docker.com/linux/static/stable/x86_64/docker-{version}.tgz"
+      archive_type: tgz
+      binary_name: docker
+      install_path: /usr/local/bin/docker

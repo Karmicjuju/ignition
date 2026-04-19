@@ -1,0 +1,22 @@
+schema_version: 1
+key: vault
+name: HashiCorp Vault CLI
+description: Secrets management and data protection tool
+categories: [security, secrets]
+persona_tags: [security]
+managed: true
+version_policy: managed
+requires_sudo: false
+health_check: "vault --version"
+dependencies: []
+
+install_methods:
+  macos:
+    - method: brew
+      package: vault
+      cask: false
+  linux:
+    - method: apt
+      package: vault
+      repo: "https://apt.releases.hashicorp.com"
+      repo_key_url: "https://apt.releases.hashicorp.com/gpg"

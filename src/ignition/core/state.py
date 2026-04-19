@@ -22,6 +22,12 @@ def load_state(*, demo_mode: bool = False) -> AppStateModel:
                 raw.pop("tool_catalog_cache", None)
                 log.info("state.migrated", from_version=2, to_version=3)
 
+            # Migration: v3 → v4 — add last_health_scan and health_summary
+            if raw.get("schema_version") == 3:
+                raw.setdefault("last_health_scan", None)
+                raw.setdefault("health_summary", {})
+                log.info("state.migrated", from_version=3, to_version=4)
+
             state = AppStateModel.model_validate(raw)
         except Exception as exc:
             log.warning("state.load_failed", reason=str(exc))

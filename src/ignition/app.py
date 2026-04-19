@@ -12,19 +12,23 @@ from ignition.core.onboarding import OnboardingService
 from ignition.core.state import load_state, save_state
 from ignition.schemas.state import AppStateModel
 from ignition.ui.screens.catalog import ToolCatalogScreen
+from ignition.ui.screens.health import HealthScreen
 from ignition.ui.screens.home import HomeScreen
 from ignition.ui.screens.onboarding import OnboardingComplete, OnboardingScreen
+from ignition.ui.screens.settings import SettingsScreen
 
 
 class IgnitionApp(App[None]):
     TITLE = "Ignition"
     SUB_TITLE = "Reactor command centre"
 
-    # NOTE: Textual does not natively support two-key chords (g t).
-    # Using ctrl+t as a single binding instead. The g t motion style
-    # belongs to a future vim-mode layer.
+    # NOTE: Textual does not natively support two-key chords (g t, g h, g s).
+    # Using ctrl+* single bindings instead. The g-motion style belongs to a
+    # future vim-mode layer.
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("ctrl+t", "goto_catalog", "Catalog"),
+        Binding("ctrl+h", "goto_health", "Health"),
+        Binding("ctrl+comma", "goto_settings", "Settings"),
     ]
 
     DEFAULT_CSS = """
@@ -72,6 +76,18 @@ class IgnitionApp(App[None]):
         if self._current_state is None:
             return
         self.push_screen(ToolCatalogScreen(self._current_state))
+
+    def action_goto_health(self) -> None:
+        """Push the Health & Diagnostics screen (ctrl+h global binding)."""
+        if self._current_state is None:
+            return
+        self.push_screen(HealthScreen(self._current_state))
+
+    def action_goto_settings(self) -> None:
+        """Push the Settings screen (ctrl+, global binding)."""
+        if self._current_state is None:
+            return
+        self.push_screen(SettingsScreen(self._current_state))
 
     def on_unmount(self) -> None:
         self._log.info("app.unmounted")

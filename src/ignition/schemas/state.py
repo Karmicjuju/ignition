@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
 
-STATE_SCHEMA_VERSION = 3
+STATE_SCHEMA_VERSION = 4
 
 
 class AppStateModel(BaseModel):
@@ -17,3 +17,5 @@ class AppStateModel(BaseModel):
     onboarding_phase: int = 0
     selected_personas: list[str] = Field(default_factory=list)
     accepted_tool_bundle: bool = False
+    last_health_scan: datetime | None = None
+    health_summary: dict[str, str] = Field(default_factory=dict)

@@ -56,15 +56,22 @@ first: `git checkout -b <descriptive-branch-name>`. Stop and report.
 
 ### G2 — All CI checks pass
 
-Run the full quality gate before touching git:
+The pre-commit hook runs ruff lint, ruff format, and ty automatically on every commit.
+Run pytest explicitly (it is intentionally excluded from pre-commit due to speed):
+
+```bash
+uv run pytest
+```
+
+If you suspect the pre-commit hook was bypassed (e.g. committed with `--no-verify`), run
+the full gate manually:
 
 ```bash
 uv run ruff check && uv run ruff format --check && uv run ty check src/ignition/core && uv run pytest
 ```
 
-**PASS:** All four commands exit 0.
-**BLOCK:** Any command fails — fix the issue (follow quality-gate skill protocol) and re-run
-G2 before proceeding. Do not commit broken code.
+**PASS:** pytest exits 0 (and pre-commit hook passed at commit time).
+**BLOCK:** pytest fails — fix and re-run before proceeding. Do not push broken code.
 
 ---
 

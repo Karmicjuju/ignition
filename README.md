@@ -12,6 +12,7 @@ Requires [`uv`](https://docs.astral.sh/uv/) and Python 3.14+.
 
 ```bash
 uv sync
+uv run pre-commit install   # wire up lint/format hooks
 uv run ignition
 ```
 

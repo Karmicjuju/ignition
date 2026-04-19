@@ -4,7 +4,9 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
 
-STATE_SCHEMA_VERSION = 4
+from ignition.schemas.auth import AwsAuthState
+
+STATE_SCHEMA_VERSION = 5
 
 
 class AppStateModel(BaseModel):
@@ -19,3 +21,4 @@ class AppStateModel(BaseModel):
     accepted_tool_bundle: bool = False
     last_health_scan: datetime | None = None
     health_summary: dict[str, str] = Field(default_factory=dict)
+    aws_auth: AwsAuthState | None = None

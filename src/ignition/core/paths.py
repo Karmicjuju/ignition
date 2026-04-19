@@ -52,3 +52,26 @@ def catalog_override_dir() -> Path:
 
 def config_file() -> Path:
     return config_dir() / "config.json"
+
+
+# --- AWS CLI well-known paths -------------------------------------------------
+# These are NOT Ignition application directories; they are dictated by the AWS
+# CLI specification (always rooted at ~/.aws). Centralised here so callers in
+# core/ never construct `Path.home() / ".aws" / ...` directly — which simplifies
+# test mocking and gives a single point to override via env (future work).
+
+
+def aws_dir() -> Path:
+    return Path.home() / ".aws"
+
+
+def aws_config_file() -> Path:
+    return aws_dir() / "config"
+
+
+def aws_credentials_file() -> Path:
+    return aws_dir() / "credentials"
+
+
+def aws_sso_cache_dir() -> Path:
+    return aws_dir() / "sso" / "cache"

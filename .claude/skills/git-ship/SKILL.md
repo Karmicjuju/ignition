@@ -123,6 +123,38 @@ git diff --cached --stat
 
 ---
 
+### A1.5 — README is up to date
+
+Review the staged diff for changes that affect what a developer would read in `README.md`:
+
+```bash
+git diff --cached --name-only
+git diff --cached -- README.md
+```
+
+Ask: does the staged work introduce or remove any of these?
+
+- New CLI flags or subcommands (e.g. `--demo`, `--operator`, new `ignition <cmd>`)
+- New or changed `uv run` / `uv sync` steps in the quick-start flow
+- New CI / lint / test commands in the Checks section
+- A milestone completion that warrants a Status line bump
+- New platform support or removal of a platform
+
+**If none of the above apply:** PASS — no README update needed. Proceed.
+
+**If any apply:** Update `README.md` to reflect the change, stage it:
+
+```bash
+git add README.md
+```
+
+Then re-run `git diff --cached -- README.md` to confirm the update is staged.
+
+**PASS:** README reflects the current state of the project.
+**BLOCKED if:** README update is too ambiguous to make without user input — stop and ask.
+
+---
+
 ### A2 — Commit message passes all rules
 
 Derive a commit message from the staged diff:
@@ -273,6 +305,7 @@ Append:
 - G2 CI all pass: PASS | BLOCK
 - G3 Has changes: PASS | BLOCK
 - A1 Staged correctly: PASS | FAIL | BLOCKED
+- A1.5 README up to date: PASS | UPDATED | BLOCKED
 - A2 Commit message: PASS | FAIL | BLOCKED — <message used>
 - A3 Push: PASS | FAIL | BLOCKED
 - A4 User approved PR: PASS | BLOCKED

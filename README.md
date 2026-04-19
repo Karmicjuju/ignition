@@ -4,7 +4,7 @@ A terminal-native developer onboarding and workspace command centre for the Reac
 
 ## Status
 
-**Pre-alpha.** Milestone 0 scaffolding — a minimal Textual app that boots, reads/writes state, and quits cleanly. Product features land in subsequent milestones (see [docs/product/prd.md](docs/product/prd.md)).
+**Pre-alpha.** Current feature set: onboarding wizard, status dashboard, tool catalog, health diagnostics, and settings.
 
 ## Quick start (development)
 
@@ -19,6 +19,7 @@ Other flags:
 
 ```bash
 uv run ignition --demo      # launch with seeded demo state
+uv run ignition --version   # print version and exit
 ```
 
 ## Checks

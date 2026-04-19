@@ -9,6 +9,7 @@ from textual.screen import Screen
 from textual.widgets import Button, Footer, Header, Static
 
 from ignition.schemas.state import AppStateModel
+from ignition.ui.screens.catalog import ToolCatalogScreen
 
 
 class HomeScreen(Screen[None]):
@@ -110,6 +111,11 @@ class HomeScreen(Screen[None]):
                         id="btn-sync-access",
                         tooltip="Refresh AWS SSO credentials and access tokens.",
                     )
+                    yield Button(
+                        "Tool Catalog",
+                        id="btn-catalog",
+                        tooltip="Browse, search, and provision tools for your Reactor workspace.",
+                    )
             yield Static(
                 "No recent activity.",
                 id="activity-placeholder",
@@ -118,4 +124,7 @@ class HomeScreen(Screen[None]):
         yield Footer()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-catalog":
+            self.app.push_screen(ToolCatalogScreen(self._state))
+            return
         self.notify("Coming in a future release.", title="Not yet available")

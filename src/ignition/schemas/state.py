@@ -4,7 +4,9 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
 
-STATE_SCHEMA_VERSION = 1
+from .catalog import ToolInfo
+
+STATE_SCHEMA_VERSION = 2
 
 
 class AppStateModel(BaseModel):
@@ -17,3 +19,4 @@ class AppStateModel(BaseModel):
     onboarding_phase: int = 0
     selected_personas: list[str] = Field(default_factory=list)
     accepted_tool_bundle: bool = False
+    tool_catalog_cache: list[ToolInfo] = Field(default_factory=list)

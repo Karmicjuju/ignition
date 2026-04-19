@@ -24,6 +24,24 @@ at the top of your output before running any assertions.
 
 ---
 
+## Pre-Flight Gate
+
+### P1 — pre-commit hook is installed
+
+```bash
+test -f .git/hooks/pre-commit && echo "installed" || echo "missing"
+```
+
+**PASS:** Output is `installed`.
+**On FAIL:** Run `uv run pre-commit install`, then re-check.
+**BLOCKED if:** `pre-commit` is not available — run `uv sync --dev` first, then install.
+
+Note: pre-commit enforces ruff lint, ruff format, and ty at commit time using the same
+`uv run` commands as A1–A3 below. If P1 is PASS and the current HEAD passed its commit hook,
+A1–A3 are likely already clean — but this gate always runs them explicitly to be certain.
+
+---
+
 ## Assertion Loop
 
 ### Iteration Protocol
@@ -109,6 +127,7 @@ type: feedback
 Append:
 ```
 ## Run: <ISO date>
+- P1 pre-commit installed: PASS | FAIL | BLOCKED
 - A1 ruff check: PASS | FAIL | BLOCKED — <file(s) if FAIL>
 - A2 ruff format: PASS | FAIL | BLOCKED
 - A3 ty check: PASS | FAIL | BLOCKED — <file(s) if FAIL>

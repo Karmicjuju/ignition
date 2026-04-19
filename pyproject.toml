@@ -48,6 +48,7 @@ artifacts = ["src/ignition/data/**"]
 dev = [
     "pytest>=8.2",
     "pytest-asyncio>=0.23",
+    "pre-commit>=3.7",
     "ruff>=0.6",
     "ty>=0.0.1a1",
     "textual-dev>=1.5",

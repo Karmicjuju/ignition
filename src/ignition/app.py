@@ -11,6 +11,7 @@ from ignition.core.logging import get_logger
 from ignition.core.onboarding import OnboardingService
 from ignition.core.state import load_state, save_state
 from ignition.schemas.state import AppStateModel
+from ignition.ui.screens.auth import AuthScreen
 from ignition.ui.screens.catalog import ToolCatalogScreen
 from ignition.ui.screens.health import HealthScreen
 from ignition.ui.screens.home import HomeScreen
@@ -28,6 +29,7 @@ class IgnitionApp(App[None]):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("ctrl+t", "goto_catalog", "Catalog"),
         Binding("ctrl+h", "goto_health", "Health"),
+        Binding("ctrl+a", "goto_auth", "Auth"),
         Binding("ctrl+comma", "goto_settings", "Settings"),
     ]
 
@@ -82,6 +84,12 @@ class IgnitionApp(App[None]):
         if self._current_state is None:
             return
         self.push_screen(HealthScreen(self._current_state))
+
+    def action_goto_auth(self) -> None:
+        """Push the AWS Auth Centre screen (ctrl+a global binding)."""
+        if self._current_state is None:
+            return
+        self.push_screen(AuthScreen(self._current_state))
 
     def action_goto_settings(self) -> None:
         """Push the Settings screen (ctrl+, global binding)."""

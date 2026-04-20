@@ -26,7 +26,17 @@ def load_state(*, demo_mode: bool = False) -> AppStateModel:
             if raw.get("schema_version") == 3:
                 raw.setdefault("last_health_scan", None)
                 raw.setdefault("health_summary", {})
+                raw["schema_version"] = 4
                 log.info("state.migrated", from_version=3, to_version=4)
+
+            # Migration: v4 → v5 — add aws_auth (optional, defaults to None).
+            # Pydantic fills the default on validate; we only need to bump the
+            # version key so the re-save below stamps schema_version=5 and so
+            # cascading migrations from older versions land on a valid v5 dict.
+            if raw.get("schema_version") == 4:
+                raw.setdefault("aws_auth", None)
+                raw["schema_version"] = 5
+                log.info("state.migrated", from_version=4, to_version=5)
 
             state = AppStateModel.model_validate(raw)
         except Exception as exc:

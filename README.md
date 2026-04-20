@@ -11,10 +11,12 @@ A terminal-native developer onboarding and workspace command centre for the Reac
 Requires [`uv`](https://docs.astral.sh/uv/) and Python 3.14+.
 
 ```bash
-uv sync
-uv run pre-commit install   # wire up lint/format hooks
+./scripts/bootstrap.sh      # installs deps + all git hooks
 uv run ignition
 ```
+
+`bootstrap.sh` runs `uv sync` and installs both `pre-commit` and
+`commit-msg` hooks in one step. Run it once per clone.
 
 Other flags:
 

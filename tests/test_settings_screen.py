@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from textual.widgets import RadioSet
+from textual.widgets import Button, RadioSet, Static
 
 from ignition.app import IgnitionApp
 from ignition.core.config import load_config, save_config
@@ -11,7 +11,7 @@ from ignition.core.state import save_state
 from ignition.schemas.config import AppConfigModel
 from ignition.schemas.state import AppStateModel
 from ignition.ui.screens.home import HomeScreen
-from ignition.ui.screens.settings import SettingsScreen
+from ignition.ui.screens.settings import PersonaManagerModal, SettingsScreen
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -214,3 +214,175 @@ async def test_all_four_radio_sets_present(isolated_paths: Path) -> None:
         expected_ids = {"radio-theme", "radio-density", "radio-motion", "radio-automation"}
         found_ids = {rs.id for rs in screen.query(RadioSet) if rs.id}
         assert found_ids == expected_ids, f"Expected RadioSet IDs {expected_ids}, found {found_ids}"
+
+
+# ---------------------------------------------------------------------------
+# test_personas_section_visible
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_personas_section_visible(isolated_paths: Path) -> None:
+    """SettingsScreen must render the Personas section with manage button."""
+    save_state(_complete_state())
+    async with IgnitionApp(demo_mode=False).run_test() as pilot:
+        screen = await _navigate_to_settings(pilot)
+        await pilot.pause()
+
+        # Personas title must be present
+        titles = [w for w in screen.query(Static) if w.id == "personas-title"]
+        assert titles, "Expected #personas-title widget in SettingsScreen"
+
+        # Manage personas button must be present
+        btn = screen.query_one("#btn-manage-personas", Button)
+        assert btn is not None
+
+
+# ---------------------------------------------------------------------------
+# test_personas_section_shows_no_personas_message
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_personas_section_shows_no_personas_message(isolated_paths: Path) -> None:
+    """When no personas are selected, show 'No personas selected.' text."""
+    state = AppStateModel(install_id="test-id", onboarding_complete=True, selected_personas=[])
+    save_state(state)
+    async with IgnitionApp(demo_mode=False).run_test() as pilot:
+        screen = await _navigate_to_settings(pilot)
+        await pilot.pause()
+
+        label = screen.query_one("#active-personas-label", Static)
+        assert "No personas" in str(label.content)
+
+
+# ---------------------------------------------------------------------------
+# test_personas_section_shows_active_personas
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_personas_section_shows_active_personas(isolated_paths: Path) -> None:
+    """When personas are selected, show them in the active personas label."""
+    state = AppStateModel(
+        install_id="test-id",
+        onboarding_complete=True,
+        selected_personas=["backend"],
+    )
+    save_state(state)
+    async with IgnitionApp(demo_mode=False).run_test() as pilot:
+        screen = await _navigate_to_settings(pilot)
+        await pilot.pause()
+
+        label = screen.query_one("#active-personas-label", Static)
+        assert "Backend" in str(label.content)
+
+
+# ---------------------------------------------------------------------------
+# test_manage_personas_button_opens_modal
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_manage_personas_button_opens_modal(isolated_paths: Path) -> None:
+    """Pressing 'Manage personas' button must push PersonaManagerModal onto the screen stack."""
+    save_state(_complete_state())
+    async with IgnitionApp(demo_mode=False).run_test(size=(120, 60)) as pilot:
+        screen = await _navigate_to_settings(pilot)
+        await pilot.pause()
+
+        # Post button pressed directly to avoid viewport/click-offset issues
+        btn = screen.query_one("#btn-manage-personas", Button)
+        screen.post_message(Button.Pressed(btn))
+        await pilot.pause()
+
+        assert isinstance(pilot.app.screen, PersonaManagerModal), (
+            f"Expected PersonaManagerModal, got {type(pilot.app.screen).__name__}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# test_persona_manager_modal_shows_all_personas
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_persona_manager_modal_shows_all_personas(isolated_paths: Path) -> None:
+    """PersonaManagerModal must render a checkbox for each of the 5 personas."""
+    save_state(_complete_state())
+    from textual.widgets import Checkbox
+
+    async with IgnitionApp(demo_mode=False).run_test(size=(120, 60)) as pilot:
+        screen = await _navigate_to_settings(pilot)
+        await pilot.pause()
+
+        btn = screen.query_one("#btn-manage-personas", Button)
+        screen.post_message(Button.Pressed(btn))
+        await pilot.pause()
+
+        modal = pilot.app.screen
+        assert isinstance(modal, PersonaManagerModal)
+        checkboxes = list(modal.query(Checkbox))
+        assert len(checkboxes) == 5, f"Expected 5 persona checkboxes, got {len(checkboxes)}"
+
+
+# ---------------------------------------------------------------------------
+# test_persona_manager_modal_checkboxes_reflect_state
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_persona_manager_modal_checkboxes_reflect_state(isolated_paths: Path) -> None:
+    """PersonaManagerModal checkboxes reflect current selected_personas."""
+    state = AppStateModel(
+        install_id="test-id",
+        onboarding_complete=True,
+        selected_personas=["backend"],
+    )
+    save_state(state)
+    from textual.widgets import Checkbox
+
+    async with IgnitionApp(demo_mode=False).run_test(size=(120, 60)) as pilot:
+        screen = await _navigate_to_settings(pilot)
+        await pilot.pause()
+
+        btn = screen.query_one("#btn-manage-personas", Button)
+        screen.post_message(Button.Pressed(btn))
+        await pilot.pause()
+
+        modal = pilot.app.screen
+        assert isinstance(modal, PersonaManagerModal)
+
+        backend_cb = modal.query_one("#persona-backend", Checkbox)
+        frontend_cb = modal.query_one("#persona-frontend", Checkbox)
+
+        assert backend_cb.value is True, "backend checkbox must be checked"
+        assert frontend_cb.value is False, "frontend checkbox must be unchecked"
+
+
+# ---------------------------------------------------------------------------
+# test_persona_manager_done_dismisses_modal
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_persona_manager_done_dismisses_modal(isolated_paths: Path) -> None:
+    """Pressing 'Done' in PersonaManagerModal returns to SettingsScreen."""
+    save_state(_complete_state())
+    async with IgnitionApp(demo_mode=False).run_test(size=(120, 60)) as pilot:
+        screen = await _navigate_to_settings(pilot)
+        await pilot.pause()
+
+        btn = screen.query_one("#btn-manage-personas", Button)
+        screen.post_message(Button.Pressed(btn))
+        await pilot.pause()
+
+        assert isinstance(pilot.app.screen, PersonaManagerModal)
+
+        done_btn = pilot.app.screen.query_one("#persona-done", Button)
+        pilot.app.screen.post_message(Button.Pressed(done_btn))
+        await pilot.pause()
+
+        assert isinstance(pilot.app.screen, SettingsScreen), (
+            f"Expected SettingsScreen after Done, got {type(pilot.app.screen).__name__}"
+        )

@@ -1,18 +1,18 @@
-# Mission: M6 — Activity Log, Operator Mode, Demo Hardening
+# Mission: M7 — Update Engine + Persona Lifecycle
 
 **Status:** COMPLETED
 **Started:** 2026-04-21
-**Branch:** feat/m6-activity-operator-demo
+**Branch:** feat/m7-updates-personas
 **Owner:** orchestrator
 
 ## Objective
 
-Capture and display a structured activity feed. Wire `--operator` debug panel. Define and seed
-three concrete demo scenarios. Wire event emission from `InstallerEngine` and `AuthService`.
+Detect and apply available tool updates. Allow users to manage their personas after
+onboarding. UpdateEngine reuses InstallerEngine — no new subprocesses. Telemetry deferred.
 
 ## Spec Reference
 
-`docs/milestones/m6-activity-operator-demo.md`
+`docs/milestones/m7-updates-personas.md`
 
 ---
 
@@ -20,64 +20,66 @@ three concrete demo scenarios. Wire event emission from `InstallerEngine` and `A
 
 All decisions locked before implementation begins.
 
-1. **Navigation shortcut for ActivityScreen** — Use `Ctrl+L` (not chord `g l`) to navigate to
-   ActivityScreen. This is consistent with the existing `Ctrl+*` pattern already in the app
-   (`Ctrl+T`, `Ctrl+H`, `Ctrl+A`, `Ctrl+,`). Chord shortcuts are explicitly called out in
-   `app.py` comments as unsupported in Textual.
+1. **`packaging` dependency** — Add `packaging>=24.0` as a runtime dependency in
+   `pyproject.toml`. Cleaner than rolling our own semver; avoids edge cases with pre-release
+   and build metadata strings. No alternative considered.
 
-2. **Operator panel widget type** — Implemented as a Textual `ModalScreen` overlay (`Screen[None]`
-   subclass with `BINDINGS = [Binding("escape", "app.pop_screen", "Close")]`). Dismissed with
-   `Esc` or by clicking outside. Same pattern as any future modals.
+2. **ToolCatalogScreen outdated filter** — Add `filter_outdated: reactive[bool] =
+   reactive(False)` as a class-level reactive attribute on `ToolCatalogScreen`. When True,
+   the tool list shows only tools with `install_status == InstallStatus.OUTDATED`.
+   Toggled to True when HomeScreen navigates to catalog via the update badge.
+   Constructor gains `filter_outdated: bool = False` parameter.
 
-3. **Event emission strategy** — `ActivityLog` is injected into `InstallerEngine` and
-   `AuthService` constructors as an optional parameter `activity_log: ActivityLog | None = None`.
-   When `None`, emission is silently skipped. No global singleton. Existing callers that
-   construct these services without an `ActivityLog` continue to work unchanged.
+3. **Persona management modal** — `PersonaManagerModal` is a `ModalScreen[None]` subclass.
+   Uses `BINDINGS = [Binding("escape", "app.pop_screen", "Close")]`. Same pattern as
+   `OperatorPanel`. Checkboxes implemented as Textual `Checkbox` widgets, one per persona,
+   inside a `Vertical` with a title and a "Done" button. Posted messages propagate changes
+   back to `SettingsScreen` which updates `AppStateModel.selected_personas` and saves state.
 
-4. **`--demo` default scenario** — `--demo` without `--operator` continues to seed Scenario 1
-   (`seed_scenario_partially_onboarded`) by default. Existing behaviour is preserved.
+4. **"Update all" button placement** — HomeScreen: a "Update All Tools" button added to the
+   `#quick-actions` `Horizontal`, shown only when `AppStateModel.available_updates` is
+   non-empty. ToolCatalogScreen: an "Update All" button added to the `#toolbar` row, shown
+   only when `filter_outdated` is True or `available_updates` is non-empty.
 
-5. **ActivityScreen row structure** — Each `ActivityEvent` renders as a single `Static` row.
-   Day headers (`Today`, `Yesterday`, `YYYY-MM-DD`) are non-selectable separator rows.
-   `j`/`k` skip separator rows when navigating. `Enter` on the selected row toggles an
-   inline detail expansion. Scroll container wraps all rows.
+5. **On-launch update check** — `IgnitionApp.on_mount()` gains a `@work(thread=True)` worker
+   `_check_updates_on_launch()` that constructs `UpdateEngine` and calls `check_updates()`.
+   Results are stored in `AppStateModel.available_updates` (list of tool_keys) and
+   `AppStateModel.last_update_check` (datetime). Worker runs after state is loaded and home
+   screen is pushed. Uses `call_from_thread` to save state after update.
 
-6. **HomeScreen recent activity** — The existing `#activity-placeholder` `Static` widget is
-   replaced with a `Vertical(id="recent-activity")` container holding up to 5 compact rows
-   (one `Static` per event) plus a `Button("View all →", id="btn-view-activity")`. When there
-   are no events, a single `Static("No recent activity.", id="activity-empty")` is shown and
-   the view-all button is hidden.
+6. **"Add persona" install prompt** — After user checks a new persona in `PersonaManagerModal`,
+   a second modal (`PersonaInstallPromptModal`) is pushed immediately showing the list of
+   uninstalled recommended tools and two buttons: "Install" and "Skip". If Install is pressed
+   the modal dismisses and `SettingsScreen` runs the install bundle via a `@work` worker.
+   If Skip is pressed the persona is added with no install. This second modal is a lightweight
+   `ModalScreen[bool]` that returns True (Install) or False (Skip).
 
-7. **Operator panel guard** — `IgnitionApp` receives a new `operator_mode: bool = False`
-   constructor parameter. The `Ctrl+D` binding is registered unconditionally in `BINDINGS`
-   but the `action_operator_panel` handler checks `self._operator_mode` and does nothing
-   (no push, no notification) if `False`. No affordance is shown in normal mode.
+7. **Conflict resolution display** — When two active personas recommend the same tool at
+   different version tiers, the `_show_detail()` panel in `ToolCatalogScreen` appends a line
+   "Version governed by: {persona} persona ({version})" when more than one active persona
+   tags the tool. Resolved silently using max of managed_version; displayed in detail only.
 
-8. **`CatalogService.force_refresh()`** — The operator panel calls
-   `CatalogService.force_refresh()` which is a thin alias for the existing
-   `refresh_from_remote()`. Added as a new method name so the spec's button label matches
-   the call without renaming the existing method.
+8. **"Removing a persona" note** — Shown as a `self.notify()` call in `SettingsScreen` after
+   `AppStateModel.selected_personas` is updated: "Tools from this persona remain installed.
+   They will no longer appear in health checks for this role."
 
-9. **`health_scan` event emission** — `HealthEngine.run_scan()` accepts an optional
-   `activity_log: ActivityLog | None = None` parameter. At the end of a scan, if provided,
-   it emits a single `health_scan` event with `summary` = "Health scan: N issues found".
-   Marked as lower priority per spec; implemented but not wired from UI workers.
+9. **`AppStateModel.selected_personas` vs `active_personas`** — The spec calls the field
+   `active_personas` but the existing schema uses `selected_personas`. Use `selected_personas`
+   throughout M7 to avoid introducing a new field. No schema rename needed.
 
-10. **`last_activity_event_id` field** — Added to `AppStateModel` as
-    `last_activity_event_id: str | None = None`. Updated by `ActivityLog.append()` after
-    each write. Used by `HomeScreen` to detect when the recent-activity panel needs refresh
-    (future use; in M6 the home screen reads directly from the log object).
+10. **`installed_tools` field** — The spec references `AppStateModel.installed_tools[key]
+    .installed_version`. This field does not exist in the current schema (v7). Instead,
+    `InstallerEngine` stores version in `CatalogService` in-memory and in `install_history`.
+    For M7, `UpdateEngine.check_updates()` will use `CatalogService.get_all_tools()` to
+    find tools with `install_status == INSTALLED` and compare `tool.version` (installed
+    version, set by `mark_installed`) vs `tool.managed_version` (added to `ToolInfo`).
+    `ToolInfo` gains a `managed_version: str | None = None` field (catalog schema change).
+    `version_policy` field already exists — `"flexible"` tier tools are excluded.
 
-11. **`ActivityLog` path function** — Add `activity_file() -> Path` to `core/paths.py`
-    returning `state_dir() / "activity.json"`. Follows the same pattern as `state_file()`.
-    `conftest.py` `isolated_paths` fixture gets a corresponding monkeypatch for the new
-    path function.
-
-12. **`EventType` enum scope** — Only the event types that are actually emitted in M6 are
-    included in the `EventType` enum: `tool_install`, `tool_install_failed`, `auth_sign_in`,
-    `auth_sign_out`, `auth_expired`, `health_scan`. Future types (`tool_update`,
-    `health_fix`, `onboarding_complete`) are defined as enum members with a comment but are
-    not wired yet, consistent with the spec table.
+11. **`managed_version` field on ToolInfo** — Add `managed_version: str | None = None` to
+    `ToolInfo` in `src/ignition/schemas/catalog.py`. This is the authoritative upgrade target.
+    For bundled catalog tools, `managed_version` defaults to the same as `version` if set.
+    For flexible-tier tools, `managed_version` is always None in the manifest.
 
 ---
 
@@ -85,65 +87,68 @@ All decisions locked before implementation begins.
 
 ### Layer 1 — Schema
 
-- [x] S1: Create `src/ignition/schemas/activity.py` — `EventType` enum, `Outcome` enum,
-      `ActivityEvent` Pydantic model (id, timestamp, event_type, tool_key, outcome, summary,
-      detail). `schema_version = 1`. All fields validated. Run `/schema-guardian`.
-- [x] S2: Update `src/ignition/schemas/state.py` — add
-      `last_activity_event_id: str | None = None` to `AppStateModel`; bump
-      `STATE_SCHEMA_VERSION` 6 → 7; add v6→v7 migration shim in `core/state.py`.
-      Run `/schema-guardian`.
+- [x] S1: Update `src/ignition/schemas/state.py` — add `last_update_check: datetime | None = None`
+      and `available_updates: list[str] = Field(default_factory=list)` to `AppStateModel`;
+      bump `STATE_SCHEMA_VERSION` 7 → 8. Run `/schema-guardian`.
+- [x] S2: Update `src/ignition/schemas/catalog.py` — add `managed_version: str | None = None`
+      to `ToolInfo`. No schema_version bump needed (catalog schema stays at 1; field is additive
+      with None default). Run `/schema-guardian`.
 
 ### Layer 2 — Core
 
-- [x] C1: Create `src/ignition/core/activity.py` — `ActivityLog` service with `append()`,
-      `get_recent(n=50)`, `get_all()`. Persist to `paths.activity_file()` as JSON array.
-      Cap at 500 entries. `append()` writes full array atomically on every call.
-      Add `activity_file()` to `src/ignition/core/paths.py`. Update `conftest.py` to
-      monkeypatch `activity_file`. Run `/core-module-review`.
-- [x] C2: Update `src/ignition/core/installer.py` — add `activity_log: ActivityLog | None = None`
-      parameter to `__init__`. After `install()` succeeds, emit `tool_install` event.
-      After `install()` fails, emit `tool_install_failed` event. Run `/core-module-review`.
-- [x] C3: Update `src/ignition/core/auth.py` — add `activity_log: ActivityLog | None = None`
-      parameter to `AuthService.__init__`. `trigger_login()` success → emit `auth_sign_in`.
-      `sign_out()` (new stub method) → emit `auth_sign_out`.
+- [x] C1: Create `src/ignition/core/updater.py` — `UpdateInfo` dataclass, `UpdateEngine` class
+      with `check_updates() -> list[UpdateInfo]`, `update_tool(tool_key) -> InstallResult`,
+      `update_all(progress_cb) -> list[InstallResult]`. Inject `CatalogService`, `InstallerEngine`,
+      `ActivityLog | None`. Flexible-tier tools excluded. Emit `TOOL_UPDATE` events.
       Run `/core-module-review`.
-- [x] C4: Update `src/ignition/core/demo.py` — replace `seed_demo_state()` with three named
-      functions: `seed_scenario_partially_onboarded()`, `seed_scenario_healthy_devops()`,
-      `seed_scenario_needs_attention()`. Keep `seed_demo_state` as a backwards-compat alias
-      that calls `seed_scenario_partially_onboarded`. Run `/core-module-review`.
-- [x] C5: Update `src/ignition/core/health.py` — add optional `activity_log` param to
-      `run_scan()`. Emit `health_scan` event with issue count summary after scan.
+- [x] C2: Update `src/ignition/core/state.py` — add v7 → v8 migration shim: setdefault
+      `last_update_check = None` and `available_updates = []`, bump schema_version to 8.
       Run `/core-module-review`.
+- [x] C3: Update `src/ignition/app.py` — add `@work(thread=True)` worker `_check_updates_on_launch`
+      called after HomeScreen is pushed in `on_mount`. Worker constructs `UpdateEngine`,
+      calls `check_updates()`, stores results in `_current_state.available_updates` and
+      `last_update_check`, calls `save_state` via `call_from_thread`. Run `/core-module-review`.
+- [x] C4: Update `pyproject.toml` — add `packaging>=24.0` to `[project] dependencies`.
 
 ### Layer 3 — UI
 
-- [x] U1: Create `src/ignition/ui/screens/activity.py` — `ActivityScreen` with
-      chronological feed, day-grouped rows, `j`/`k` navigation, `Enter` expand/collapse,
-      `Esc` back. Add `Ctrl+L` binding to `IgnitionApp`. Run `/screen-reviewer`.
-- [x] U2: Update `src/ignition/ui/screens/home.py` — replace `#activity-placeholder`
-      `Static` with recent-activity panel (last 5 events + "View all →" button). Wire
-      `btn-view-activity` to push `ActivityScreen`. Run `/screen-reviewer`.
-- [x] U3: Create `src/ignition/ui/screens/operator.py` — `OperatorPanel` as `ModalScreen`.
-      View raw state JSON button (opens read-only scrollable overlay), Force reload button,
-      three seed-scenario buttons. Update `IgnitionApp` with `operator_mode` param and
-      `Ctrl+D` handler. Run `/screen-reviewer`.
+- [x] U1: Update `src/ignition/ui/screens/home.py` — add update badge `Static` (id="update-badge")
+      showing "X tools have updates" when `available_updates` is non-empty; clicking it or pressing
+      the "Update All Tools" button triggers update-all via a `@work` worker. Badge navigates to
+      `ToolCatalogScreen(state, filter_outdated=True)`. Add "Update All Tools" `Button` to
+      `#quick-actions`. Run `/screen-reviewer`.
+- [x] U2: Update `src/ignition/ui/screens/catalog.py` — add `filter_outdated: bool = False`
+      constructor param, `filter_outdated` reactive attribute. Add `#btn-update-tool` Button to
+      detail panel (shown only when tool is installed + outdated). Add `#btn-update-all` Button
+      to `#toolbar`. Update `_show_detail` to show "Update available: X → Y" tag and conflict
+      resolution note. Run `/screen-reviewer`.
+- [x] U3: Update `src/ignition/ui/screens/settings.py` — add Personas section below preferences:
+      readonly status display of active personas + "Manage personas" button. Create
+      `PersonaManagerModal(ModalScreen[None])` in same file (or separate
+      `src/ignition/ui/screens/persona_modal.py`). Modal shows checkboxes for all 5 personas;
+      on check → `PersonaInstallPromptModal` for new personas; on uncheck → remove + notify.
+      Run `/screen-reviewer`.
 
 ### Layer 4 — Tests
 
-- [x] T1: Create `tests/test_activity_log.py` — unit tests: append persists, get_recent(n),
-      get_all, cap enforcement at 500, file always valid JSON array, atomic write pattern,
-      load from existing file. Run `/test-critic`.
-- [x] T2: Create `tests/test_activity_screen.py` — Pilot tests: rows display, day grouping,
-      expand/collapse with Enter, j/k navigation, Esc pops screen. Run `/test-critic`.
-- [x] T3: Update `tests/test_demo.py` — extend to cover all three scenarios: persona state,
-      tool counts, health summary, activity log content. Keep existing tests, add new ones.
+- [x] T1: Create `tests/test_updater.py` — unit tests: version comparison logic, outdated
+      detection, flexible-tier exclusion, `check_updates` returns correct list, `update_tool`
+      reuses InstallerEngine (mock), `update_all` sequential, `TOOL_UPDATE` event emitted.
       Run `/test-critic`.
+- [x] T2: Create `tests/test_persona_lifecycle.py` — unit tests: add persona (with and without
+      install), remove persona (no uninstall, selected_personas updated), conflict resolution
+      (highest version wins), `selected_personas` persistence. Run `/test-critic`.
+- [x] T3: Update `tests/test_settings_screen.py` (extend) or create if absent — Pilot tests:
+      Personas section visible, "Manage personas" opens modal, checkbox state reflects
+      `selected_personas`, persona add/remove flow. Run `/test-critic`.
 
 ### Layer 5 — QA + Security
 
 - [x] Q1: `/quality-gate` — ruff lint, ruff format, ty type check, pytest all pass.
-- [x] Q2: `/security-review` — mandatory; ActivityLog touches file I/O, operator panel
-      touches state serialisation.
+      225 passed, 2 skipped (Linux-only). All four checks green.
+- [x] Q2: `/security-review` — WARN (MEDIUM only). S110 ×2 in UI files (silent except/pass);
+      no HIGH/CRITICAL. Auto-proceeded. UpdateEngine subprocess path reuses InstallerEngine
+      create_subprocess_exec exclusively; persona_id from hardcoded widget IDs (safe).
 
 ---
 
@@ -155,16 +160,16 @@ All source paths are absolute under `/Users/colt/Documents/Source/Ignition`.
 
 Layer dispatch order (strict — never skip layers):
 1. S1 + S2 in parallel (schema-architect)
-2. C1 + C2 + C3 + C4 + C5 in parallel (core-engineer) — only after S1 and S2 both complete
+2. C1 + C2 + C3 + C4 in parallel (core-engineer) — only after S1 and S2 both complete
 3. U1 + U2 in parallel, then U3 after both (ui-builder) — only after all C tasks complete
 4. T1 + T2 + T3 in parallel (test-writer) — only after U1, U2, U3 all complete
 5. Q1 quality-gate → Q2 security-review (qa-runner)
 
 Key patterns:
-- Schemas: `src/ignition/schemas/health.py` (StrEnum + Pydantic BaseModel pattern)
-- Core: `src/ignition/core/health.py` (structlog, asyncio, pathlib pattern)
-- Screens: `src/ignition/ui/screens/auth.py` (Screen[None], inject AppStateModel, @work)
-- Tests: `tests/test_health_engine.py` + `tests/test_demo.py` (isolated_paths, AsyncMock)
-- State migration: `src/ignition/core/state.py` (shim pattern from v5→v6 for reference)
-- Existing app bindings: `src/ignition/app.py` (Ctrl+* pattern, operator_mode flag)
-- Branch: `feat/m6-activity-operator-demo`
+- Schemas: `src/ignition/schemas/state.py` (v8 now), `src/ignition/schemas/catalog.py`
+- Core: `src/ignition/core/installer.py` (InstallerEngine — reuse with force param)
+- Core: `src/ignition/core/activity.py` (ActivityLog — inject for TOOL_UPDATE)
+- Screens: `src/ignition/ui/screens/operator.py` (ModalScreen pattern for persona modal)
+- Tests: `tests/test_installer.py` + `tests/test_activity_log.py` (patterns)
+- State migration: `src/ignition/core/state.py` (shim pattern; add v7→v8)
+- Branch: `feat/m7-updates-personas`

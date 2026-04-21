@@ -55,6 +55,15 @@ def load_state(*, demo_mode: bool = False) -> AppStateModel:
                 raw["schema_version"] = 7
                 log.info("state.migrated", from_version=6, to_version=7)
 
+            # Migration: v7 → v8 — add last_update_check and available_updates.
+            # Pydantic fills the defaults on validate; bumping the version key
+            # ensures the re-save stamps schema_version=8.
+            if raw.get("schema_version") == 7:
+                raw.setdefault("last_update_check", None)
+                raw.setdefault("available_updates", [])
+                raw["schema_version"] = 8
+                log.info("state.migrated", from_version=7, to_version=8)
+
             state = AppStateModel.model_validate(raw)
         except Exception as exc:
             log.warning("state.load_failed", reason=str(exc))

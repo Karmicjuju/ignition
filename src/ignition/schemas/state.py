@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 from ignition.schemas.auth import AwsAuthState
 from ignition.schemas.catalog import InstallMethod
 
-STATE_SCHEMA_VERSION = 7
+STATE_SCHEMA_VERSION = 8
 INSTALL_HISTORY_MAX = 100
 
 
@@ -34,6 +34,8 @@ class AppStateModel(BaseModel):
     aws_auth: AwsAuthState | None = None
     install_history: list[InstallEvent] = Field(default_factory=list)
     last_activity_event_id: str | None = None
+    last_update_check: datetime | None = None
+    available_updates: list[str] = Field(default_factory=list)
 
     @field_validator("install_history", mode="before")
     @classmethod

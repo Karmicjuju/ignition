@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import ClassVar
 
+from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.widgets import Static
 
 from ignition.core.activity import ActivityLog
+from ignition.core.catalog import CatalogService
 from ignition.core.demo import seed_demo_state
+from ignition.core.installer import InstallerEngine
 from ignition.core.logging import get_logger
 from ignition.core.onboarding import OnboardingService
 from ignition.core.state import load_state, save_state
+from ignition.core.updater import UpdateEngine
 from ignition.schemas.state import AppStateModel
 from ignition.ui.screens.auth import AuthScreen
 from ignition.ui.screens.catalog import ToolCatalogScreen
@@ -74,6 +79,36 @@ class IgnitionApp(App[None]):
             self.push_screen(OnboardingScreen(state))
         else:
             self.push_screen(HomeScreen(state, self._activity_log))
+            self._check_updates_on_launch()
+
+    @work(thread=True)
+    def _check_updates_on_launch(self) -> None:
+        """Check for tool updates in the background after HomeScreen is shown.
+
+        Constructs UpdateEngine, runs check_updates(), and stores the result in
+        AppStateModel.available_updates and last_update_check. Saves state via
+        call_from_thread to avoid touching the event loop from the worker thread.
+        """
+        if self._current_state is None:
+            return
+        try:
+            catalog = CatalogService()
+            installer = InstallerEngine(self._current_state, self._activity_log)
+            engine = UpdateEngine(
+                catalog=catalog,
+                installer=installer,
+                activity_log=self._activity_log,
+            )
+            updates = engine.check_updates()
+            self._current_state.available_updates = [u.tool_key for u in updates]
+            self._current_state.last_update_check = datetime.now(UTC)
+            self._log.info(
+                "app.update_check.complete",
+                available_updates=len(updates),
+            )
+            self.call_from_thread(save_state, self._current_state)
+        except Exception as exc:
+            self._log.warning("app.update_check.failed", reason=str(exc))
 
     def on_onboarding_complete(self, message: OnboardingComplete) -> None:
         save_state(message.state)

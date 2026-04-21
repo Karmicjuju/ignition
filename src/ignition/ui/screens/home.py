@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
@@ -96,6 +97,25 @@ class HomeScreen(Screen[None]):
     #btn-view-activity {
         margin-top: 1;
     }
+
+    #update-badge {
+        color: $warning;
+        text-style: bold;
+        margin-right: 2;
+        padding: 0 1;
+    }
+
+    #update-badge.hidden {
+        display: none;
+    }
+
+    #btn-update-all {
+        margin-right: 2;
+    }
+
+    #btn-update-all.hidden {
+        display: none;
+    }
     """
 
     def __init__(self, state: AppStateModel, activity_log: ActivityLog | None = None) -> None:
@@ -107,6 +127,9 @@ class HomeScreen(Screen[None]):
         if not self._state.onboarding_complete:
             return ("NEEDS ATTENTION", "status--warn")
         return ("READY", "status--ok")
+
+    def _update_count(self) -> int:
+        return len(self._state.available_updates)
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -147,6 +170,21 @@ class HomeScreen(Screen[None]):
                         id="btn-catalog",
                         tooltip="Browse, search, and provision tools for your Reactor workspace.",
                     )
+                    n = self._update_count()
+                    badge_classes = "hidden" if n == 0 else ""
+                    yield Static(
+                        f"{n} tool{'s' if n != 1 else ''} have updates",
+                        id="update-badge",
+                        classes=badge_classes,
+                    )
+                    update_all_classes = "hidden" if n == 0 else ""
+                    yield Button(
+                        "Update All Tools",
+                        id="btn-update-all",
+                        variant="warning",
+                        classes=update_all_classes,
+                        tooltip="Update all tools that have newer managed versions available.",
+                    )
             with Vertical(id="recent-activity"):
                 yield Static("Recent activity", id="recent-activity-label")
                 recent = self._activity_log.get_recent(5)
@@ -183,4 +221,48 @@ class HomeScreen(Screen[None]):
         if event.button.id == "btn-view-activity":
             self.app.push_screen(ActivityScreen(self._state, self._activity_log))
             return
+        if event.button.id == "update-badge":
+            self.app.push_screen(ToolCatalogScreen(self._state, filter_outdated=True))
+            return
+        if event.button.id == "btn-update-all":
+            self._run_update_all()
+            return
         self.notify("Coming in a future release.", title="Not yet available")
+
+    @work(exclusive=True)
+    async def _run_update_all(self) -> None:
+        """Update all outdated tools sequentially in a background worker."""
+        from ignition.core.catalog import CatalogService
+        from ignition.core.installer import InstallerEngine
+        from ignition.core.updater import UpdateEngine
+
+        catalog = CatalogService()
+        installer = InstallerEngine(self._state, self._activity_log)
+        engine = UpdateEngine(
+            catalog=catalog,
+            installer=installer,
+            activity_log=self._activity_log,
+        )
+        self.notify("Updating all tools…", title="Updates")
+        results = await engine.update_all()
+        succeeded = sum(1 for r in results if r.success)
+        failed = sum(1 for r in results if not r.success)
+        if failed == 0:
+            self.notify(f"All {succeeded} tool(s) updated.", title="Updates")
+        else:
+            self.notify(
+                f"{succeeded} updated, {failed} failed.",
+                severity="warning",
+                title="Updates",
+            )
+        # Refresh the state reference so available_updates reflects the new state
+        from ignition.core.state import save_state
+
+        self._state.available_updates = []
+        save_state(self._state)
+        # Hide badge and button now that update is done
+        try:
+            self.query_one("#update-badge").add_class("hidden")
+            self.query_one("#btn-update-all").add_class("hidden")
+        except Exception:
+            pass

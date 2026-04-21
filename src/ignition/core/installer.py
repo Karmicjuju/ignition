@@ -7,10 +7,15 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ignition.core.logging import get_logger
+from ignition.schemas.activity import EventType, Outcome
 from ignition.schemas.catalog import InstallMethod, ToolInfo
 from ignition.schemas.state import AppStateModel, InstallEvent
+
+if TYPE_CHECKING:
+    from ignition.core.activity import ActivityLog
 
 _LOCAL_BIN = Path.home() / ".local" / "bin"
 
@@ -61,9 +66,14 @@ class InstallerEngine:
     _POLL_INTERVAL_SECONDS = 5
     _POLL_MAX_SECONDS = 120
 
-    def __init__(self, state: AppStateModel) -> None:
+    def __init__(
+        self,
+        state: AppStateModel,
+        activity_log: ActivityLog | None = None,
+    ) -> None:
         self._log = get_logger("ignition.core.installer")
         self._state = state
+        self._activity_log = activity_log
         self._brew_available: bool | None = None
         self._apt_updated: bool = False
 
@@ -111,6 +121,26 @@ class InstallerEngine:
             success=result.success,
             method=method,
         )
+
+        if self._activity_log is not None:
+            if result.success:
+                version_suffix = f" ({result.detected_version})" if result.detected_version else ""
+                self._activity_log.append(
+                    EventType.TOOL_INSTALL,
+                    Outcome.SUCCESS,
+                    f"Installed {tool.name}{version_suffix}",
+                    tool_key=tool.key,
+                    detail=f"Method: {method.value}",
+                )
+            else:
+                self._activity_log.append(
+                    EventType.TOOL_INSTALL_FAILED,
+                    Outcome.FAILURE,
+                    f"Failed to install {tool.name}",
+                    tool_key=tool.key,
+                    detail=result.error or "",
+                )
+
         return result
 
     async def install_bundle(

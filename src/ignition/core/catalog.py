@@ -127,6 +127,14 @@ class CatalogService:
         self._log.info("catalog.refresh.updated", count=len(self._tools))
         return True
 
+    def force_refresh(self) -> bool:
+        """Alias for ``refresh_from_remote()`` used by the operator panel.
+
+        Clears any cached ETag and re-fetches the remote catalog. Returns
+        True when remote data was fetched, False otherwise.
+        """
+        return self.refresh_from_remote()
+
     def mark_installed(self, tool_key: str, version: str | None = None) -> ToolInfo | None:
         """Mutate the in-memory status of the named tool to INSTALLED.
 

@@ -29,6 +29,10 @@ def state_file() -> Path:
     return state_dir() / "state.json"
 
 
+def activity_file() -> Path:
+    return state_dir() / "activity.json"
+
+
 def install_id_file() -> Path:
     return state_dir() / "install_id"
 

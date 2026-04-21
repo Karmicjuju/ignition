@@ -6,6 +6,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.widgets import Static
 
+from ignition.core.activity import ActivityLog
 from ignition.core.demo import seed_demo_state
 from ignition.core.logging import get_logger
 from ignition.core.onboarding import OnboardingService
@@ -31,6 +32,10 @@ class IgnitionApp(App[None]):
         Binding("ctrl+h", "goto_health", "Health"),
         Binding("ctrl+a", "goto_auth", "Auth"),
         Binding("ctrl+comma", "goto_settings", "Settings"),
+        Binding("ctrl+l", "goto_activity", "Activity"),
+        # Ctrl+D is registered unconditionally; action_operator_panel guards
+        # against non-operator invocations at runtime.
+        Binding("ctrl+d", "operator_panel", "Operator", show=False),
     ]
 
     DEFAULT_CSS = """
@@ -43,11 +48,13 @@ class IgnitionApp(App[None]):
     }
     """
 
-    def __init__(self, *, demo_mode: bool = False) -> None:
+    def __init__(self, *, demo_mode: bool = False, operator_mode: bool = False) -> None:
         super().__init__()
         self._demo_mode = demo_mode
+        self._operator_mode = operator_mode
         self._log = get_logger("ignition.app")
         self._current_state: AppStateModel | None = None
+        self._activity_log = ActivityLog()
 
     def compose(self) -> ComposeResult:
         if self._demo_mode:
@@ -66,12 +73,12 @@ class IgnitionApp(App[None]):
         if OnboardingService().is_first_launch(state):
             self.push_screen(OnboardingScreen(state))
         else:
-            self.push_screen(HomeScreen(state))
+            self.push_screen(HomeScreen(state, self._activity_log))
 
     def on_onboarding_complete(self, message: OnboardingComplete) -> None:
         save_state(message.state)
         self._current_state = message.state
-        self.push_screen(HomeScreen(message.state))
+        self.push_screen(HomeScreen(message.state, self._activity_log))
 
     def action_goto_catalog(self) -> None:
         """Push the Tool Catalog screen (ctrl+t global binding)."""
@@ -96,6 +103,24 @@ class IgnitionApp(App[None]):
         if self._current_state is None:
             return
         self.push_screen(SettingsScreen(self._current_state))
+
+    def action_goto_activity(self) -> None:
+        """Push the Activity Log screen (ctrl+l global binding)."""
+        if self._current_state is None:
+            return
+        from ignition.ui.screens.activity import ActivityScreen
+
+        self.push_screen(ActivityScreen(self._current_state, self._activity_log))
+
+    def action_operator_panel(self) -> None:
+        """Push the Operator Panel (ctrl+d) — only when operator_mode is active."""
+        if not self._operator_mode:
+            return
+        if self._current_state is None:
+            return
+        from ignition.ui.screens.operator import OperatorPanel
+
+        self.push_screen(OperatorPanel(self._current_state))
 
     def on_unmount(self) -> None:
         self._log.info("app.unmounted")

@@ -56,3 +56,4 @@ class ToolInfo(BaseModel):
     install_methods: PlatformInstallMethods = Field(default_factory=PlatformInstallMethods)
     install_status: InstallStatus = InstallStatus.MISSING
     version: str | None = None
+    managed_version: str | None = None

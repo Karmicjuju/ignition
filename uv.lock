@@ -226,6 +226,7 @@ name = "ignition"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "packaging" },
     { name = "platformdirs" },
     { name = "pydantic" },
     { name = "ruamel-yaml" },
@@ -246,6 +247,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "packaging", specifier = ">=24.0" },
     { name = "platformdirs", specifier = ">=4.2" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "ruamel-yaml", specifier = ">=0.18" },

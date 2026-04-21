@@ -6,6 +6,7 @@ categories: [language, core]
 persona_tags: [backend, contractor]
 managed: true
 version_policy: managed
+release_channel: stable
 requires_sudo: false
 health_check: "python3 --version"
 dependencies: []

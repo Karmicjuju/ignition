@@ -102,6 +102,19 @@ Scan for module-level mutable variables that tests read or write.
 
 ---
 
+### A7 — Widget text is read via `.content`, not `.renderable`
+
+In Textual 8.x, `Static` and `Label` widgets expose their text via `.content` (a `str`),
+not `.renderable`. Any test that does `str(widget.renderable)` or accesses `.renderable`
+directly will raise `AttributeError`.
+
+Scan for `.renderable` on any widget query result.
+
+**PASS:** No `.renderable` access on queried widgets.
+**On FAIL:** Replace `str(widget.renderable)` with `str(widget.content)`.
+
+---
+
 ## Save Memory
 
 After every run, append to:

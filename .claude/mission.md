@@ -1,175 +1,151 @@
-# Mission: M7 — Update Engine + Persona Lifecycle
+# Mission: Post-MVP Sprint 1 — Updates Screen, Recommended Actions, Release Channels
 
 **Status:** COMPLETED
-**Started:** 2026-04-21
-**Branch:** feat/m7-updates-personas
-**Owner:** orchestrator
 
-## Objective
+## Request
 
-Detect and apply available tool updates. Allow users to manage their personas after
-onboarding. UpdateEngine reuses InstallerEngine — no new subprocesses. Telemetry deferred.
+Three features bundled as one post-MVP sprint:
 
-## Spec Reference
+**Feature A: Dedicated Updates Screen**
+- New UpdatesScreen (`src/ignition/ui/screens/updates.py`) grouped by governance tier
+- Per-tool update rows with version delta (current → available), one-click update button
+- "Update all managed" action at top
+- Navigation: `Ctrl+U` shortcut or HomeScreen badge click
+- Fills the UX spec "Updates" screen gap; UpdateEngine already exists from M7
 
-`docs/milestones/m7-updates-personas.md`
+**Feature B: HomeScreen Recommended Actions panel**
+- "Recommended for you" panel on HomeScreen driven by active personas + install state
+- Shows up to 4 actionable suggestions; clicking navigates to relevant screen/action
+- Logic lives in a new RecommendationsEngine core service
+
+**Feature C: Release Channels in Catalog**
+- Add `release_channel: str = "stable"` to ToolInfo (default "stable")
+- Add `preferred_channel: str = "stable"` to AppStateModel (requires schema v8→v9 bump)
+- CatalogService filters tools by channel
+- SettingsScreen gains a "Release channel" preference row
+
+---
+
+## PO Decision
+
+**Verdict:** APPROVE with caveats
+**Date:** 2026-04-21
+
+All caveats resolved by orchestrator — see UX Decisions section.
 
 ---
 
 ## UX Decisions
 
-All decisions locked before implementation begins.
+**Decision 1 — HomeScreen badge navigation retarget (Caveat 1)**
+The HomeScreen update badge click is retargeted exclusively to UpdatesScreen.
+ToolCatalogScreen retains its `filter_outdated` reactive for direct keyboard nav
+(ctrl+t then filter) but HomeScreen no longer drives it via badge click.
+Rationale: having two dedicated entry points for the same action creates confusion.
+UpdatesScreen is purpose-built; the badge should take users there.
 
-1. **`packaging` dependency** — Add `packaging>=24.0` as a runtime dependency in
-   `pyproject.toml`. Cleaner than rolling our own semver; avoids edge cases with pre-release
-   and build metadata strings. No alternative considered.
+**Decision 2 — UpdatesScreen row layout (Caveat 2)**
+- Row fields: tool name + version delta text (`installed → available`) + governance tier badge
+  (badge text "Managed" or "Optional") + per-tool "Update" button
+- "Update all managed" button sits in a top toolbar above the list (not a sticky group header)
+- Progress feedback: inline progress row (a Static widget) replaces the Update button during
+  an active update — same pattern used in ToolCatalogScreen for installs
+- Empty state: full-screen centred message "All tools are up to date ✓" with last-checked
+  timestamp displayed below the message
 
-2. **ToolCatalogScreen outdated filter** — Add `filter_outdated: reactive[bool] =
-   reactive(False)` as a class-level reactive attribute on `ToolCatalogScreen`. When True,
-   the tool list shows only tools with `install_status == InstallStatus.OUTDATED`.
-   Toggled to True when HomeScreen navigates to catalog via the update badge.
-   Constructor gains `filter_outdated: bool = False` parameter.
+**Decision 3 — RecommendationsEngine suggestion card layout (Caveat 3)**
+- Panel placement: inserted between Quick Actions and Recent Activity on HomeScreen
+  (after reactor-status-panel content, before recent-activity Vertical)
+- Card structure: priority icon + one-line action text + secondary label ("recommended for
+  backend") + right-aligned action button/link. Each card is a Static/Horizontal with a
+  Button whose label is contextual ("Install", "Update", "Fix", "Configure", "Continue")
+- Maximum 4 suggestions shown; panel hidden entirely when suggestion list is empty
+- Empty state: hide panel (zero height, display: none), no placeholder text
+- Suggestion type to navigation mapping:
+  - SuggestionType.INSTALL → ToolCatalogScreen (pre-filtered by tool key display)
+  - SuggestionType.UPDATE → UpdatesScreen
+  - SuggestionType.AUTH → AuthScreen
+  - SuggestionType.HEALTH → HealthScreen
+  - SuggestionType.ONBOARDING → OnboardingScreen
 
-3. **Persona management modal** — `PersonaManagerModal` is a `ModalScreen[None]` subclass.
-   Uses `BINDINGS = [Binding("escape", "app.pop_screen", "Close")]`. Same pattern as
-   `OperatorPanel`. Checkboxes implemented as Textual `Checkbox` widgets, one per persona,
-   inside a `Vertical` with a title and a "Done" button. Posted messages propagate changes
-   back to `SettingsScreen` which updates `AppStateModel.selected_personas` and saves state.
+**Decision 4 — Schema v8→v9 migration (Caveat 4)**
+- STATE_SCHEMA_VERSION bumped 8→9 in schemas/state.py
+- Migration shim added in core/state.py load_state(): when raw schema_version == 8,
+  call `raw.setdefault("preferred_channel", "stable")` then bump to 9
+- This follows the established cascade-migration pattern
 
-4. **"Update all" button placement** — HomeScreen: a "Update All Tools" button added to the
-   `#quick-actions` `Horizontal`, shown only when `AppStateModel.available_updates` is
-   non-empty. ToolCatalogScreen: an "Update All" button added to the `#toolbar` row, shown
-   only when `filter_outdated` is True or `available_updates` is non-empty.
+**Decision 5 — Ctrl+U binding**
+- Navigation shortcut Ctrl+U registered at app level (app.py BINDINGS) as `action_goto_updates`
+- HomeScreen also registers Ctrl+U locally as a pass-through to UpdatesScreen
+- "g u" chord not used — no native chord support in Textual
 
-5. **On-launch update check** — `IgnitionApp.on_mount()` gains a `@work(thread=True)` worker
-   `_check_updates_on_launch()` that constructs `UpdateEngine` and calls `check_updates()`.
-   Results are stored in `AppStateModel.available_updates` (list of tool_keys) and
-   `AppStateModel.last_update_check` (datetime). Worker runs after state is loaded and home
-   screen is pushed. Uses `call_from_thread` to save state after update.
-
-6. **"Add persona" install prompt** — After user checks a new persona in `PersonaManagerModal`,
-   a second modal (`PersonaInstallPromptModal`) is pushed immediately showing the list of
-   uninstalled recommended tools and two buttons: "Install" and "Skip". If Install is pressed
-   the modal dismisses and `SettingsScreen` runs the install bundle via a `@work` worker.
-   If Skip is pressed the persona is added with no install. This second modal is a lightweight
-   `ModalScreen[bool]` that returns True (Install) or False (Skip).
-
-7. **Conflict resolution display** — When two active personas recommend the same tool at
-   different version tiers, the `_show_detail()` panel in `ToolCatalogScreen` appends a line
-   "Version governed by: {persona} persona ({version})" when more than one active persona
-   tags the tool. Resolved silently using max of managed_version; displayed in detail only.
-
-8. **"Removing a persona" note** — Shown as a `self.notify()` call in `SettingsScreen` after
-   `AppStateModel.selected_personas` is updated: "Tools from this persona remain installed.
-   They will no longer appear in health checks for this role."
-
-9. **`AppStateModel.selected_personas` vs `active_personas`** — The spec calls the field
-   `active_personas` but the existing schema uses `selected_personas`. Use `selected_personas`
-   throughout M7 to avoid introducing a new field. No schema rename needed.
-
-10. **`installed_tools` field** — The spec references `AppStateModel.installed_tools[key]
-    .installed_version`. This field does not exist in the current schema (v7). Instead,
-    `InstallerEngine` stores version in `CatalogService` in-memory and in `install_history`.
-    For M7, `UpdateEngine.check_updates()` will use `CatalogService.get_all_tools()` to
-    find tools with `install_status == INSTALLED` and compare `tool.version` (installed
-    version, set by `mark_installed`) vs `tool.managed_version` (added to `ToolInfo`).
-    `ToolInfo` gains a `managed_version: str | None = None` field (catalog schema change).
-    `version_policy` field already exists — `"flexible"` tier tools are excluded.
-
-11. **`managed_version` field on ToolInfo** — Add `managed_version: str | None = None` to
-    `ToolInfo` in `src/ignition/schemas/catalog.py`. This is the authoritative upgrade target.
-    For bundled catalog tools, `managed_version` defaults to the same as `version` if set.
-    For flexible-tier tools, `managed_version` is always None in the manifest.
+**Decision 6 — Channel filtering semantics**
+- Channel order: stable < beta < experimental
+- "stable" user sees only stable tools
+- "beta" user sees stable + beta tools
+- "experimental" user sees stable + beta + experimental tools
+- "deprecated" tools always shown regardless of preferred_channel (with DEPRECATED badge)
+- Channel filtering applied in CatalogService.get_tools() (a new filtered view method)
 
 ---
 
 ## Plan
 
-### Layer 1 — Schema
+### Layer 1 — Schema (schema-architect)
 
-- [x] S1: Update `src/ignition/schemas/state.py` — add `last_update_check: datetime | None = None`
-      and `available_updates: list[str] = Field(default_factory=list)` to `AppStateModel`;
-      bump `STATE_SCHEMA_VERSION` 7 → 8. Run `/schema-guardian`.
-- [x] S2: Update `src/ignition/schemas/catalog.py` — add `managed_version: str | None = None`
-      to `ToolInfo`. No schema_version bump needed (catalog schema stays at 1; field is additive
-      with None default). Run `/schema-guardian`.
+- [x] S1: schemas/catalog.py — add `release_channel: str = "stable"` to ToolInfo
+- [x] S2: schemas/state.py — add `preferred_channel: str = "stable"`, bump STATE_SCHEMA_VERSION 8→9
+- [x] S3: core/state.py — add v8→v9 migration shim for preferred_channel
 
-### Layer 2 — Core
+### Layer 2 — Core (core-engineer)
 
-- [x] C1: Create `src/ignition/core/updater.py` — `UpdateInfo` dataclass, `UpdateEngine` class
-      with `check_updates() -> list[UpdateInfo]`, `update_tool(tool_key) -> InstallResult`,
-      `update_all(progress_cb) -> list[InstallResult]`. Inject `CatalogService`, `InstallerEngine`,
-      `ActivityLog | None`. Flexible-tier tools excluded. Emit `TOOL_UPDATE` events.
-      Run `/core-module-review`.
-- [x] C2: Update `src/ignition/core/state.py` — add v7 → v8 migration shim: setdefault
-      `last_update_check = None` and `available_updates = []`, bump schema_version to 8.
-      Run `/core-module-review`.
-- [x] C3: Update `src/ignition/app.py` — add `@work(thread=True)` worker `_check_updates_on_launch`
-      called after HomeScreen is pushed in `on_mount`. Worker constructs `UpdateEngine`,
-      calls `check_updates()`, stores results in `_current_state.available_updates` and
-      `last_update_check`, calls `save_state` via `call_from_thread`. Run `/core-module-review`.
-- [x] C4: Update `pyproject.toml` — add `packaging>=24.0` to `[project] dependencies`.
+- [x] C1: core/recommendations.py — RecommendationsEngine with Suggestion dataclass, SuggestionType enum, get_suggestions() implementing all 5 rules
+- [x] C2: core/catalog.py — add get_tools() channel-filtered method; update get_all_tools() to respect preferred_channel via optional parameter
+- [x] C3: data/catalog/tools/*.yaml — add `release_channel: stable` to all 12 tool manifests
 
-### Layer 3 — UI
+### Layer 3 — UI (ui-builder)
 
-- [x] U1: Update `src/ignition/ui/screens/home.py` — add update badge `Static` (id="update-badge")
-      showing "X tools have updates" when `available_updates` is non-empty; clicking it or pressing
-      the "Update All Tools" button triggers update-all via a `@work` worker. Badge navigates to
-      `ToolCatalogScreen(state, filter_outdated=True)`. Add "Update All Tools" `Button` to
-      `#quick-actions`. Run `/screen-reviewer`.
-- [x] U2: Update `src/ignition/ui/screens/catalog.py` — add `filter_outdated: bool = False`
-      constructor param, `filter_outdated` reactive attribute. Add `#btn-update-tool` Button to
-      detail panel (shown only when tool is installed + outdated). Add `#btn-update-all` Button
-      to `#toolbar`. Update `_show_detail` to show "Update available: X → Y" tag and conflict
-      resolution note. Run `/screen-reviewer`.
-- [x] U3: Update `src/ignition/ui/screens/settings.py` — add Personas section below preferences:
-      readonly status display of active personas + "Manage personas" button. Create
-      `PersonaManagerModal(ModalScreen[None])` in same file (or separate
-      `src/ignition/ui/screens/persona_modal.py`). Modal shows checkboxes for all 5 personas;
-      on check → `PersonaInstallPromptModal` for new personas; on uncheck → remove + notify.
-      Run `/screen-reviewer`.
+- [x] U1: ui/screens/updates.py — new UpdatesScreen: tool rows (name + version delta + tier badge + Update button), inline progress, "Update all managed" button, empty state, Ctrl+U binding
+- [x] U2: ui/screens/settings.py — add Release channel RadioSet section (Stable/Beta/Experimental) with immediate-apply pattern saving to AppStateModel.preferred_channel
+- [x] U3: ui/screens/home.py — retarget badge to UpdatesScreen; add #recommendations-panel; inject RecommendationsEngine; wire Ctrl+U
+- [x] U4: app.py — register Ctrl+U → action_goto_updates binding, import UpdatesScreen
 
-### Layer 4 — Tests
+### Layer 4 — Tests (test-writer)
 
-- [x] T1: Create `tests/test_updater.py` — unit tests: version comparison logic, outdated
-      detection, flexible-tier exclusion, `check_updates` returns correct list, `update_tool`
-      reuses InstallerEngine (mock), `update_all` sequential, `TOOL_UPDATE` event emitted.
-      Run `/test-critic`.
-- [x] T2: Create `tests/test_persona_lifecycle.py` — unit tests: add persona (with and without
-      install), remove persona (no uninstall, selected_personas updated), conflict resolution
-      (highest version wins), `selected_personas` persistence. Run `/test-critic`.
-- [x] T3: Update `tests/test_settings_screen.py` (extend) or create if absent — Pilot tests:
-      Personas section visible, "Manage personas" opens modal, checkbox state reflects
-      `selected_personas`, persona add/remove flow. Run `/test-critic`.
+- [x] T1: tests/test_recommendations.py — unit tests: each suggestion rule, priority ordering, max-4 cap, empty-state
+- [x] T2: tests/test_updates_screen.py — Pilot tests: row display, per-tool update button, update-all enabled/disabled, empty state
+- [x] T3: tests/test_settings_screen.py — extend: release channel RadioSet present, preference persists
+- [x] T4: tests/test_catalog_service.py — extend: channel filtering (stable/beta/experimental)
 
-### Layer 5 — QA + Security
+### Layer 5 — QA
 
-- [x] Q1: `/quality-gate` — ruff lint, ruff format, ty type check, pytest all pass.
-      225 passed, 2 skipped (Linux-only). All four checks green.
-- [x] Q2: `/security-review` — WARN (MEDIUM only). S110 ×2 in UI files (silent except/pass);
-      no HIGH/CRITICAL. Auto-proceeded. UpdateEngine subprocess path reuses InstallerEngine
-      create_subprocess_exec exclusively; persona_id from hardcoded widget IDs (safe).
+- [x] QA: /quality-gate — all four CI checks pass
+- [x] SEC: /security-review — PASS or CLEARED on all findings
+
+---
+
+## Progress
+
+All layers complete. 263 tests passing (2 skipped). Quality gate clean (ruff lint, ruff format, ty, pytest all pass). Security review WARN (4 MEDIUM S110/S112 findings, no HIGH/CRITICAL). PR open: https://github.com/Karmicjuju/ignition/pull/12
+
+---
+
+## Blockers
+
+None.
 
 ---
 
 ## Resume
 
-If resuming: read this file, check `[x]` tasks, find the first `[ ]` task, continue from there.
-
+If resuming: read this file, check Status. If IN_PROGRESS, find first `[ ]` task in Plan.
 All source paths are absolute under `/Users/colt/Documents/Source/Ignition`.
 
-Layer dispatch order (strict — never skip layers):
-1. S1 + S2 in parallel (schema-architect)
-2. C1 + C2 + C3 + C4 in parallel (core-engineer) — only after S1 and S2 both complete
-3. U1 + U2 in parallel, then U3 after both (ui-builder) — only after all C tasks complete
-4. T1 + T2 + T3 in parallel (test-writer) — only after U1, U2, U3 all complete
-5. Q1 quality-gate → Q2 security-review (qa-runner)
-
-Key patterns:
-- Schemas: `src/ignition/schemas/state.py` (v8 now), `src/ignition/schemas/catalog.py`
-- Core: `src/ignition/core/installer.py` (InstallerEngine — reuse with force param)
-- Core: `src/ignition/core/activity.py` (ActivityLog — inject for TOOL_UPDATE)
-- Screens: `src/ignition/ui/screens/operator.py` (ModalScreen pattern for persona modal)
-- Tests: `tests/test_installer.py` + `tests/test_activity_log.py` (patterns)
-- State migration: `src/ignition/core/state.py` (shim pattern; add v7→v8)
-- Branch: `feat/m7-updates-personas`
+Key file paths:
+- Branch: feat/post-mvp-sprint-1
+- Schemas: src/ignition/schemas/state.py (v9), src/ignition/schemas/catalog.py
+- Core: src/ignition/core/recommendations.py (new), src/ignition/core/catalog.py, src/ignition/core/state.py
+- Screens: src/ignition/ui/screens/updates.py (new), src/ignition/ui/screens/home.py, src/ignition/ui/screens/settings.py
+- App: src/ignition/app.py
+- YAMLs: src/ignition/data/catalog/tools/*.yaml (all 12)
+- Tests: tests/test_recommendations.py (new), tests/test_updates_screen.py (new), tests/test_settings_screen.py (extended), tests/test_catalog_service.py (extended)

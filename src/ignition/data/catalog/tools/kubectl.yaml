@@ -6,6 +6,7 @@ categories: [container, orchestration]
 persona_tags: [devops]
 managed: true
 version_policy: managed
+release_channel: stable
 requires_sudo: false
 health_check: "kubectl version --client"
 dependencies: []

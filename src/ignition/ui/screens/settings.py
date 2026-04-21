@@ -162,6 +162,25 @@ class SettingsScreen(Screen[None]):
                         value=self._config.automation_level == "autopilot",
                     )
 
+            with Horizontal(classes="settings-row"):
+                yield Label("Release channel", classes="settings-label")
+                with RadioSet(id="radio-channel", classes="settings-control"):
+                    yield RadioButton(
+                        "Stable",
+                        id="channel-stable",
+                        value=self._state.preferred_channel == "stable",
+                    )
+                    yield RadioButton(
+                        "Beta",
+                        id="channel-beta",
+                        value=self._state.preferred_channel == "beta",
+                    )
+                    yield RadioButton(
+                        "Experimental",
+                        id="channel-experimental",
+                        value=self._state.preferred_channel == "experimental",
+                    )
+
             with Vertical(id="personas-section"):
                 yield Static("Personas", id="personas-title")
                 active = self._state.selected_personas
@@ -187,16 +206,22 @@ class SettingsScreen(Screen[None]):
 
         if radio_id == "radio-theme":
             self._config.theme = selected_label
+            save_config(self._config)
         elif radio_id == "radio-density":
             self._config.density = selected_label
+            save_config(self._config)
         elif radio_id == "radio-motion":
             self._config.motion = selected_label
+            save_config(self._config)
         elif radio_id == "radio-automation":
             self._config.automation_level = selected_label
+            save_config(self._config)
+        elif radio_id == "radio-channel":
+            self._state.preferred_channel = selected_label
+            save_state(self._state)
         else:
             return
 
-        save_config(self._config)
         self.notify(f"Setting saved: {radio_id.replace('radio-', '')} -> {selected_label}")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -310,8 +335,18 @@ class PersonaInstallPromptModal(ModalScreen[bool]):
             else:
                 yield Static("No new tools to install.", id="prompt-tools")
             with Horizontal(id="prompt-buttons"):
-                yield Button("Install", id="btn-install", variant="primary")
-                yield Button("Skip", id="btn-skip", variant="default")
+                yield Button(
+                    "Install",
+                    id="btn-install",
+                    variant="primary",
+                    tooltip="Install the recommended tools for this persona.",
+                )
+                yield Button(
+                    "Skip",
+                    id="btn-skip",
+                    variant="default",
+                    tooltip="Skip tool installation for this persona.",
+                )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn-install":
@@ -392,8 +427,14 @@ class PersonaManagerModal(ModalScreen[list[str]]):
                         label,
                         id=f"persona-{pid}",
                         value=pid in self._selected,
+                        tooltip=f"Toggle the {label} persona on or off.",
                     )
-            yield Button("Done", id="persona-done", variant="primary")
+            yield Button(
+                "Done",
+                id="persona-done",
+                variant="primary",
+                tooltip="Save persona selections and close this panel.",
+            )
 
     def action_dismiss_modal(self) -> None:
         self.dismiss(self._selected)

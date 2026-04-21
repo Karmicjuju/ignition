@@ -64,6 +64,14 @@ def load_state(*, demo_mode: bool = False) -> AppStateModel:
                 raw["schema_version"] = 8
                 log.info("state.migrated", from_version=7, to_version=8)
 
+            # Migration: v8 → v9 — add preferred_channel (release channel preference).
+            # Pydantic fills the default on validate; bumping the version key
+            # ensures the re-save stamps schema_version=9.
+            if raw.get("schema_version") == 8:
+                raw.setdefault("preferred_channel", "stable")
+                raw["schema_version"] = 9
+                log.info("state.migrated", from_version=8, to_version=9)
+
             state = AppStateModel.model_validate(raw)
         except Exception as exc:
             log.warning("state.load_failed", reason=str(exc))

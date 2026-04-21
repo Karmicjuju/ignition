@@ -6,6 +6,7 @@ categories: [vcs, core]
 persona_tags: [backend, frontend, devops, security, contractor]
 managed: false
 version_policy: flexible
+release_channel: stable
 requires_sudo: false
 health_check: "git --version"
 dependencies: []

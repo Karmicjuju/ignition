@@ -38,6 +38,7 @@ class IgnitionApp(App[None]):
         Binding("ctrl+a", "goto_auth", "Auth"),
         Binding("ctrl+comma", "goto_settings", "Settings"),
         Binding("ctrl+l", "goto_activity", "Activity"),
+        Binding("ctrl+u", "goto_updates", "Updates"),
         # Ctrl+D is registered unconditionally; action_operator_panel guards
         # against non-operator invocations at runtime.
         Binding("ctrl+d", "operator_panel", "Operator", show=False),
@@ -146,6 +147,14 @@ class IgnitionApp(App[None]):
         from ignition.ui.screens.activity import ActivityScreen
 
         self.push_screen(ActivityScreen(self._current_state, self._activity_log))
+
+    def action_goto_updates(self) -> None:
+        """Push the Updates screen (ctrl+u global binding)."""
+        if self._current_state is None:
+            return
+        from ignition.ui.screens.updates import UpdatesScreen
+
+        self.push_screen(UpdatesScreen(self._current_state, self._activity_log))
 
     def action_operator_panel(self) -> None:
         """Push the Operator Panel (ctrl+d) — only when operator_mode is active."""

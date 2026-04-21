@@ -111,7 +111,7 @@ Scan for `px` values in TCSS strings.
 
 ### A8 — All interactive widgets have a `tooltip` label
 
-Scan for `Button(`, `Input(`, `Select(`, `Checkbox(` widget instantiations.
+Scan for `Button(`, `Input(`, `Select(`, `Checkbox(`, `RadioButton(` widget instantiations.
 
 **PASS:** Each interactive widget instantiation includes a `tooltip=` argument.
 **On FAIL:** Add a descriptive `tooltip=` string to each widget missing one.

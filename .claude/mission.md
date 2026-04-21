@@ -1,6 +1,6 @@
 # Mission: Post-MVP Sprint 1 — Updates Screen, Recommended Actions, Release Channels
 
-**Status:** IN_PROGRESS
+**Status:** COMPLETED
 
 ## Request
 
@@ -126,7 +126,7 @@ UpdatesScreen is purpose-built; the badge should take users there.
 
 ## Progress
 
-Layer 1 complete. Layer 2 complete. Layer 3 complete. Layer 4 complete. QA and security review complete. PR open.
+All layers complete. 263 tests passing (2 skipped). Quality gate clean (ruff lint, ruff format, ty, pytest all pass). Security review WARN (4 MEDIUM S110/S112 findings, no HIGH/CRITICAL). PR open: https://github.com/Karmicjuju/ignition/pull/12
 
 ---
 

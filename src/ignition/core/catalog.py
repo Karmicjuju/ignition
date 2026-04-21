@@ -127,16 +127,31 @@ class CatalogService:
         self._log.info("catalog.refresh.updated", count=len(self._tools))
         return True
 
-    def simulate_install(self, tool_key: str) -> ToolInfo | None:
-        """Mutate the in-memory install_status of the named tool to INSTALLED.
+    def mark_installed(self, tool_key: str, version: str | None = None) -> ToolInfo | None:
+        """Mutate the in-memory status of the named tool to INSTALLED.
 
-        Returns the updated ToolInfo, or None if the key is not found.
-        This is a no-op stub — no subprocess is invoked.
+        Optionally records the detected version string. Returns the updated
+        ToolInfo, or None if the key is not found.
         """
         for tool in self.get_all_tools():
             if tool.key == tool_key:
                 tool.install_status = InstallStatus.INSTALLED
-                self._log.info("catalog.simulate_install", tool_key=tool_key)
+                if version is not None:
+                    tool.version = version
+                self._log.info("catalog.mark_installed", tool_key=tool_key, version=version)
                 return tool
-        self._log.warning("catalog.simulate_install.not_found", tool_key=tool_key)
+        self._log.warning("catalog.mark_installed.not_found", tool_key=tool_key)
+        return None
+
+    def mark_failed(self, tool_key: str) -> ToolInfo | None:
+        """Mutate the in-memory status of the named tool to FAILED.
+
+        Returns the updated ToolInfo, or None if the key is not found.
+        """
+        for tool in self.get_all_tools():
+            if tool.key == tool_key:
+                tool.install_status = InstallStatus.FAILED
+                self._log.info("catalog.mark_failed", tool_key=tool_key)
+                return tool
+        self._log.warning("catalog.mark_failed.not_found", tool_key=tool_key)
         return None

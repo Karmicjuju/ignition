@@ -1,107 +1,178 @@
-# Mission: M4 — AWS Auth Centre
+# Mission: M5 — Real Installer Engine + Full Onboarding Custom Path
 
-**Status:** COMPLETED (PO triage 2026-04-19: APPROVE with caveats — all P0/P1 caveats remediated; M4.1 follow-up captured)
-**Started:** 2026-04-19
+**Status:** IN_PROGRESS
+**Started:** 2026-04-21
+**Branch:** feat/m4-installer-engine
 **Owner:** orchestrator
 
 ## Objective
 
-Build the AWS authentication centre for Ignition. Adds credential detection, profile management, SSO login triggering, and a dedicated Auth screen wired into app navigation and health checks.
+Replace the `CatalogService.simulate_install` stub with a real platform-aware `InstallerEngine`.
+Wire it into the Tool Catalog screen and the Onboarding wizard. Add the full custom onboarding
+path (Phase 2b: manual tool selection checklist). Persist install history in `AppStateModel`.
+Bump `AppStateModel.schema_version` from 5 to 6.
 
-## PO Triage Verdict (2026-04-19)
+## Spec Reference
 
-**APPROVE with caveats.** Three P0/P1 fixes required before this PR ships. P2 items deferred to a follow-up M4.1 mission.
+`docs/milestones/m4-installer-engine.md`
 
-**Bundling decision:** All P0 + P1 fixes land in this same PR. Rationale — the surface area is small (one schema file, one core module, one screen), splitting would force a second security-review pass on overlapping code, and the P1 items (session expiry, in-progress UX, switch-scope clarity) materially change the security posture that the reviewer must sign off on.
+---
 
 ## UX Decisions
 
-1. **Session badge** — Three states only: Active (green), Expired (red), Unknown (dim). Active = session_expiry is set and in the future. Expired = expiry is set and in the past. Unknown = no expiry on record.
-2. **Profile list** — Use a DataTable with columns: Name, Type, Region, Active. Consistent with catalog screen widget usage.
-3. **Action bar** — Four buttons across the status panel: Login, Refresh, Switch Profile, Repair Config. Login is always enabled; Refresh and Switch Profile require an active profile row to be selected.
-4. **Status panel** — Stacked Static widgets showing: active profile name, region, session expiry (or "No active session").
-5. **Demo mode profiles** — Three seeded profiles: `sso-dev` (SSO, us-east-1), `sso-staging` (SSO, us-west-2), `static-prod` (static, us-east-1). `sso-dev` is active with a future session expiry.
-6. **Keyboard nav** — `ctrl+a` global binding opens auth screen. Escape pops back.
-7. **Switch Profile** — Calls `AuthService.switch_profile()` which updates `AwsAuthState.active_profile`. Notifies user of result, **including the explicit scope caveat** (Ignition-only; user must `export AWS_PROFILE=…` for shell-wide effect — see UX Decision #13).
-8. **Login / Refresh** — Calls `AuthService.trigger_login()` which structures the subprocess call but does not exec in tests (mocked).
-9. **Repair Config** — Structures `aws configure` subprocess call. Notified on completion.
-10. **Health check** — Auth health added to the existing `configs` category in HealthEngine. Reports HEALTHY (active session), NEEDS_ATTENTION (expired), or RECOMMENDED (unknown/no config).
-11. **AwsAuthState in AppState** — Added as optional field `aws_auth: AwsAuthState | None = None`. Schema version bumped 4 → 5. **CORRECTION (PO triage):** the mission doc previously asserted a v4→v5 migration shim was added; it was not. `src/ignition/core/state.py` only has v2→v3 and v3→v4 migrations. A v4→v5 shim **must be added** as part of P0-1 below (no behavioural change needed beyond letting v4 state load with `aws_auth=None`, then re-stamping schema_version=5 on next save).
-12. **Session expiry detection (NEW, P1-2)** — `session_expiry` will be populated by reading `~/.aws/sso/cache/*.json` and selecting the cache entry whose `startUrl` matches the active profile's `sso_start_url`. The `expiresAt` ISO-8601 string is parsed to UTC datetime. Static and instance profiles return `None`. No `aws sts` subprocess fallback in v0.1 (would block the UI on a network round-trip and require credentials we may not have).
-13. **Switch-scope notification (NEW, P1-5)** — `_action_switch` notify shows a two-line message: line 1 confirms the in-app switch (`Switched Ignition to <profile>.`), line 2 explicitly tells the user that shell-wide effect requires `export AWS_PROFILE=<profile>`. Severity: `warning` (so the user sees it as actionable, not just informational).
-14. **In-progress button state (NEW, P1-3)** — While any of the four `@work` actions is running, all four buttons are disabled and the active button label is suffixed with `…` (e.g. `Login…`). On completion (success or error), buttons re-enable and labels reset. Implemented via a single `_busy: reactive[bool]` on the screen that drives a `_set_buttons_busy(active_id)` helper.
-15. **Empty-state CTA (NEW, P1-4)** — When `_render_profiles` finds zero profiles, the "Loading profiles…" Static is replaced with a Vertical containing the message and a `Repair Config` Button. Clicking it invokes the same `_action_repair` handler as the action-bar Repair button.
+All decisions are locked before implementation begins.
 
-## P0/P1 Punch List (PO triage caveats)
+1. **binary_url format** — Single URL per platform entry. Runtime architecture selection is done
+   via `platform.machine()` at the download point (not encoded in the URL). If `binary_url` is
+   absent from the manifest and the primary method fails, the tool is marked
+   `InstallStatus.FAILED` immediately (no further fallback).
 
-### P0 — must fix before merge
-- **P0-1**: Add v4→v5 migration shim in `src/ignition/core/state.py`. Without it, existing tester state files fail validation, fall through the `except` at `state.py:32`, and get silently replaced — destroying `install_id` and onboarding progress. Owner: core-engineer.
+2. **apt-get update caching** — `apt-get update` is run once per `InstallerEngine` instance
+   (i.e., once per session). The result is cached on the instance as `_apt_updated: bool`.
+   Subsequent `apt-get install` calls within the same session skip the update step.
 
-### P1 — must fix before declaring M4 complete
-- **P1-2**: Populate `session_expiry` (UX Decision #12). Currently hardcoded `None` at `src/ignition/core/auth.py:99` and `:65`, collapsing the badge to two states. Owner: core-engineer.
-- **P1-3**: Disable Login/Refresh/Switch/Repair while a `@work` runs; show "Working…" suffix (UX Decision #14). Currently buttons stay enabled at `src/ignition/ui/screens/auth.py:212` allowing subprocess spam. Owner: ui-builder.
-- **P1-4**: Add Repair Config CTA on the empty-profiles state at `src/ignition/ui/screens/auth.py:171` (UX Decision #15). Currently a dead-end label. Owner: ui-builder.
-- **P1-5**: Update `_action_switch` notify to surface Ignition-only scope (UX Decision #13). Currently the notify at `auth.py:251` is silent about the fact `switch_profile` only mutates Ignition's `os.environ`. Owner: ui-builder.
+3. **PATH banner after binary install** — After writing a binary to `~/.local/bin`, inspect
+   `os.environ["PATH"]` at install time. If `~/.local/bin` is NOT present, show a
+   `severity="warning"` notify: "Restart your terminal or run `source ~/.zshrc` to add
+   ~/.local/bin to your PATH." If it IS already on PATH, suppress the banner entirely.
 
-## P2 — Deferred to M4.1 follow-up mission
-- Token-expiry timer (countdown widget on the status panel)
-- Role switching distinct from profile switching
-- Expandable config-files / env-vars panel
-- Dedicated "Issues" surface on the Auth screen
-- `ProfileType.INSTANCE` is declared in `src/ignition/schemas/auth.py:14` but never emitted by `_parse_profiles` — instance-role profiles are silently misclassified as STATIC. Add a `credential_source = Ec2InstanceMetadata` / IMDS heuristic detector.
-- Help (`?`), search (`/`), palette (`Ctrl+K`) shortcuts on the Auth screen.
+4. **sudo / apt privilege model** — Ignition never invokes `sudo` directly. For commands
+   requiring privilege (`apt-get install`, binary to `/usr/local/bin`), it builds the exact
+   command string, shows it in a copy-paste block, and polls for the binary on PATH every
+   5 seconds for up to 2 minutes. Once binary is detected, it marks install complete.
 
-A new `.claude/missions/m4_1_auth_followup.md` file should be created when M4 ships, capturing these as the M4.1 backlog. Not blocking the current PR.
+5. **Bundle install sequencing** — Tools in a bundle install sequentially (not concurrently)
+   to avoid conflicting package manager locks. If a tool fails, mark it FAILED and continue
+   with remaining tools. Summary at end: "N installed, M failed — [Retry failed]".
+
+6. **InstallStatus.FAILED** — Added to the `InstallStatus` StrEnum. The existing Install
+   button in the detail panel shows "Failed — Retry" when status is FAILED and is enabled.
+   For INSTALLED it stays disabled. For MISSING/FAILED, it is enabled.
+
+7. **Phase 2b UI** — Phase 2b is a scrollable `ListView` of `Checkbox` items. All recommended
+   tools are pre-checked. The user may uncheck recommended tools or check additional tools from
+   the full catalog. A `[Accept custom selection]` button advances to install. No search/filter
+   required in M4. The "Customise" button lives on the Phase 2a review screen next to "Accept".
+
+8. **Install button label transitions** — In `ToolCatalogScreen`, the install button ID changes
+   to `btn-install` (replacing `btn-simulate-install`). Label states:
+   - "Install" — MISSING or FAILED (button enabled)
+   - "Installing…" — in-progress (button disabled)
+   - "Installed" — INSTALLED (button disabled)
+   - "Failed — Retry" — FAILED after a failed attempt (button enabled)
+   Button is hidden when tool status is INSTALLED and install has not been attempted this session
+   (consistent with existing show/hide logic, but now backed by real state).
+
+9. **Post-install health re-check** — After `InstallerEngine.install()` completes (success or
+   failure), `ToolCatalogScreen` triggers `HealthEngine.run_scan(categories=["tools"])` in a
+   background worker and refreshes the tool list on completion. No separate UI affordance needed.
+
+10. **InstallEvent / install_history** — `install_history: list[InstallEvent] = []` on
+    `AppStateModel`, capped at 100 entries (oldest dropped). `InstallEvent` fields:
+    `timestamp`, `tool_key`, `method`, `success`, `version`. Defined in `schemas/state.py`
+    alongside `AppStateModel` (no separate install.py schema file).
+
+11. **Schema version bump** — `AppStateModel.schema_version` bumps 5 → 6. The v5 → v6
+    migration shim in `core/state.py` adds `install_history: []` to raw state dicts that
+    don't have it, then sets `schema_version = 6`. No other field changes at this version.
+
+12. **InstallMethod enum** — `InstallMethod` is defined in `schemas/catalog.py` as a StrEnum
+    with values: `BREW`, `APT`, `BINARY`, `COPY_PASTE` (copy-paste block for sudo commands).
+    `InstallerEngine.resolve_method()` returns an `InstallMethod` value.
+
+13. **Homebrew detection** — `resolve_method()` caches the result of `which brew` on the
+    instance as `_brew_available: bool | None`. On first call it runs the subprocess check;
+    subsequent calls use the cached value. If Homebrew is absent on macOS, immediately falls
+    back to BINARY method.
+
+14. **Progress widget** — `ToolCatalogScreen` progress is a `Static` widget placed above the
+    install button in the detail panel. It shows streaming status messages as text (not a
+    real progress bar). Cleared on completion. Hidden when no install is in progress.
+
+15. **OnboardingScreen phase tracking** — Phase 2b is represented internally as `_phase = 3`
+    (Phase 2a stays as `_phase = 2`). The accept button in Phase 2b is `btn-custom-accept`.
+    The customise button added in Phase 2a is `btn-customise`.
+
+16. **simulate_install removal** — `CatalogService.simulate_install()` is fully removed. The
+    method is not deprecated-and-kept; it is deleted. Any callers (currently only
+    `ToolCatalogScreen`) are updated. Tests covering `simulate_install` are replaced with tests
+    for the new `InstallerEngine.install()` integration.
+
+---
 
 ## Plan
 
-### Layer 1 — Schema (original M4)
-- [x] S1: Create `src/ignition/schemas/auth.py` (AwsProfile, AwsAuthState, AuthAction)
-- [x] S2: Update `src/ignition/schemas/state.py` — add `aws_auth` field, bump schema_version to 5
+### Layer 1 — Schema
 
-### Layer 2 — Core (original M4)
-- [x] C1: Create `src/ignition/core/auth.py` (AuthService)
-- [x] C2: Update `src/ignition/core/health.py` — add AWS auth check in configs category
-- [x] C3: Update `src/ignition/core/demo.py` — seed demo AwsAuthState
+- [x] S1: Verify/update `src/ignition/schemas/catalog.py` — add `InstallStatus.FAILED`,
+      add `InstallMethod` StrEnum, verify `PlatformInstallMethods` fields match M4 YAML spec.
+      No new schema file needed; bump `CATALOG_SCHEMA_VERSION` if `ToolInfo` fields change.
+- [x] S2: Update `src/ignition/schemas/state.py` — add `InstallEvent` model, add
+      `install_history: list[InstallEvent] = []` to `AppStateModel`, bump
+      `STATE_SCHEMA_VERSION` 5 → 6.
 
-### Layer 3 — UI (original M4)
-- [x] U1: Create `src/ignition/ui/screens/auth.py` (AwsAuthScreen)
-- [x] U2: Update `src/ignition/app.py` — add `ctrl+a` binding and `action_goto_auth`
-- [x] U3: Update `src/ignition/ui/screens/home.py` — wire "Sync Access" button to AuthScreen
+### Layer 2 — Core
 
-### Layer 4 — Tests (original M4)
-- [x] T1: Create `tests/test_auth_schema.py`
-- [x] T2: Create `tests/test_auth_core.py`
-- [x] T3: Create `tests/test_auth_screen.py`
+- [ ] C1: Create `src/ignition/core/installer.py` — `InstallerEngine` with `install()`,
+      `install_bundle()`, `resolve_method()`. All subprocess calls use
+      `asyncio.create_subprocess_exec`. Caches `_brew_available` and `_apt_updated` per
+      instance. Reads `tool.install_methods` to dispatch. Records `InstallEvent` and
+      appends to state.
+- [ ] C2: Update `src/ignition/core/catalog.py` — remove `simulate_install()`. Add
+      `mark_installed()` method that updates in-memory status and version for a tool key
+      (called by `InstallerEngine` after success). Add `mark_failed()` similarly.
+- [x] C3: Update `src/ignition/core/state.py` — add v5 → v6 migration shim (adds
+      `install_history: []` to old state dicts, bumps `schema_version` to 6).
+      VERIFIED: shim present, 4 migration tests pass.
 
-### Layer 5 — PO Triage Punch List (NEW)
-- [x] R1: schema-guardian review of `src/ignition/schemas/auth.py` and the state v5 bump (TaskList #2) — all assertions PASS, no changes required
-- [x] R2: P0-1 — v4→v5 migration shim added; also fixed missing `raw["schema_version"] = 4` reassignment in v3→v4 block so cascade works correctly. core-module-review clean (TaskList #3)
-- [x] R3: P1-2 — `_detect_session_expiry()` added to `core/auth.py`, reads `~/.aws/sso/cache/*.json` and matches by `startUrl`. `switch_profile` now returns `tuple[AwsAuthState, str]` with explicit `SWITCH_SCOPE_NOTICE` so the UI cannot silently drop the caveat. Side fix: AWS path constants moved to `core/paths.py` helpers (`aws_dir`, `aws_config_file`, `aws_credentials_file`, `aws_sso_cache_dir`). core-module-review clean (TaskList #4)
-- [x] R4: P1-3 / P1-4 / P1-5 — `_set_busy()` helper added (disables all 4 buttons + appends "…" to active one); `on_button_pressed` drops events while `_busy`; empty-state copy now points at Repair Config button (UX Decision #15); `_action_switch` consumes `(state, scope_notice)` from core and notifies with `severity="warning"`. screen-reviewer 9/10 PASS, A10 (Reactor language) BLOCKED on literal AWS CLI command names — accepted as a known carve-out (PO-approved UX Decisions #3 + #13 cover the vocabulary) (TaskList #5)
-- [x] R5: tests added/updated. tests/test_auth_core.py rewritten (drops broken `_AWS_CONFIG`/`_AWS_CREDENTIALS` patches now that paths flow through helpers; covers `_detect_session_expiry` parsing/edge cases and `switch_profile` tuple contract). tests/test_state_migration.py NEW (covers v3→v4→v5 cascade and v4→v5 shim — guards `install_id` preservation regression). tests/test_auth_screen.py NEW (empty-state CTA copy, busy-state machine including dropped-press, switch-scope notify with warning severity). conftest.py extended to monkeypatch `aws_dir` / `aws_config_file` / `aws_credentials_file` / `aws_sso_cache_dir`. test-critic 6/6 PASS on all 4 files (TaskList #6)
-- [x] R6: security-review WARN verdict (no HIGH/CRITICAL). All four PO-flagged surface areas (SSO cache JSON parsing, subprocess argv invocation, os.environ scope, state-file migration) verified safe. Warnings: S101 in tests (project-standard), S112 defensive UI try/except (intentional), pip-audit not installed (recommend adding to dev deps). PR not blocked (TaskList #7)
+### Layer 3 — UI
 
-### Layer 6 — QA
-- [x] Q1: quality-gate PASS. ruff check + format clean, ty clean, 106/106 pytest. Mid-run regression caught and fixed: leaf helpers in `core/paths.py` (e.g. `aws_dir`) cannot be patched via `monkeypatch.setattr(paths_mod, ...)` if the consumer does `from ignition.core.paths import aws_dir` — the bound symbol bypasses the patch. Fixed by routing `core/auth.py` and `tests/test_auth_core.py` through `from ignition.core import paths` + `paths.aws_dir()` (TaskList #8)
+- [ ] U1: Update `src/ignition/ui/screens/catalog.py` — replace `btn-simulate-install` with
+      `btn-install`; wire `on_button_pressed` to `InstallerEngine.install()` via `@work`;
+      add progress `Static` widget; add post-install health re-check worker; update
+      `_STATUS_CLASS` / `_STATUS_LABEL` for `FAILED` state.
+- [ ] U2: Update `src/ignition/ui/screens/onboarding.py` — add Phase 2b checklist (Phase 3
+      internally); add `btn-customise` button in Phase 2a; add `btn-custom-accept` button;
+      wire `_complete_onboarding` to use custom tool selection when via Phase 2b path.
+
+### Layer 4 — Tests
+
+- [ ] T1: Create `tests/test_installer_engine.py` — unit tests with mocked subprocess for
+      `InstallerEngine`: method resolution (brew/apt/binary/copy-paste), success path,
+      failure path (no fallback URL → FAILED), `_apt_updated` cache, PATH banner logic,
+      `install_bundle` sequencing, `InstallResult` fields.
+- [ ] T2: Create `tests/test_onboarding_custom.py` — Pilot tests for Phase 2b checklist:
+      customise button visible in Phase 2a, Phase 2b shows all recommended tools pre-checked,
+      uncheck a tool → excluded from accepted list, check additional tool → included,
+      `btn-custom-accept` triggers `OnboardingComplete` with correct tool list.
+- [ ] T3: Update `tests/test_catalog_service.py` — replace `simulate_install` tests with
+      tests for `mark_installed()` / `mark_failed()`. Add assertion that `simulate_install`
+      does NOT exist on `CatalogService`.
+
+### Layer 5 — QA + Security
+
+- [ ] Q1: `/quality-gate` — ruff lint, ruff format, ty type check, pytest all pass.
+- [ ] Q2: `/security-review` — mandatory; installer touches subprocess extensively.
+
+---
 
 ## Resume
 
-If resuming: read this file, check which R*/Q* tasks are `[x]`, find the first incomplete task, continue from there. All source paths are absolute under `/Users/colt/Documents/source/ignition`.
+If resuming: read this file, check `[x]` tasks, find the first `[ ]` task, continue from there.
 
-Punch-list dispatch order (strict):
-1. R1 schema-guardian (parallel-safe with no other agent — but R2 conceptually depends on its sign-off)
-2. R2 core-engineer (P0 migration shim) — the highest-risk item; do first so test-writer can reference the shim
-3. R3 core-engineer (P1 expiry + switch scope)
-4. R4 ui-builder (P1 UX) — depends on R3 because the UI calls into the core API surface
-5. R5 test-writer
-6. R6 security-review
-7. Q1 quality-gate
+All source paths are absolute under `/Users/colt/Documents/Source/Ignition`.
 
-Key patterns to follow:
+Layer dispatch order (strict — never skip layers):
+1. S1 + S2 in parallel (schema-architect)
+2. C1 + C2 + C3 in parallel (core-engineer) — only after S1 and S2 both complete
+3. U1 + U2 in parallel (ui-builder) — only after C1, C2, C3 all complete
+4. T1 + T2 + T3 in parallel (test-writer) — only after U1 and U2 both complete
+5. Q1 quality-gate → Q2 security-review (qa-runner)
+
+Key patterns:
 - Schemas: `src/ignition/schemas/health.py` (StrEnum + Pydantic BaseModel pattern)
-- Core: `src/ignition/core/health.py` (asyncio, structlog, _run_subprocess pattern)
-- Screens: `src/ignition/ui/screens/health.py` (Screen[None], inject AppStateModel, @work)
-- Tests: `tests/test_health_engine.py` + `tests/test_health_screen.py` (isolated_paths, AsyncMock)
-- App nav: `src/ignition/app.py` (BINDINGS + action_goto_* pattern)
-- State migration: `src/ignition/core/state.py` (v2→v3 and v3→v4 shims; v4→v5 to be added by R2)
+- Core: `src/ignition/core/health.py` (`_run_subprocess`, structlog, asyncio pattern)
+- Screens: `src/ignition/ui/screens/catalog.py` (Screen[None], inject AppStateModel, @work)
+- Tests: `tests/test_health_engine.py` + `tests/test_catalog_service.py` (isolated_paths, AsyncMock)
+- State migration: `src/ignition/core/state.py` (shim pattern from v4→v5 for reference)
+- Branch: `feat/m4-installer-engine`

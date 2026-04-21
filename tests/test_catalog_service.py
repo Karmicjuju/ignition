@@ -145,18 +145,30 @@ def test_search_tools_no_match_returns_empty(isolated_paths: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# test_simulate_install_mutates_status
+# test_simulate_install_does_not_exist
 # ---------------------------------------------------------------------------
 
 
-def test_simulate_install_mutates_status(isolated_paths: Path) -> None:
-    """simulate_install must flip the in-memory status to INSTALLED."""
+def test_simulate_install_does_not_exist(isolated_paths: Path) -> None:
+    """CatalogService must NOT expose simulate_install (removed in M4)."""
     svc = _service(isolated_paths)
-    # python starts as MISSING per stub catalogue
+    assert not hasattr(svc, "simulate_install"), (
+        "simulate_install must be removed from CatalogService"
+    )
+
+
+# ---------------------------------------------------------------------------
+# test_mark_installed_mutates_status
+# ---------------------------------------------------------------------------
+
+
+def test_mark_installed_mutates_status(isolated_paths: Path) -> None:
+    """mark_installed must flip the in-memory status to INSTALLED."""
+    svc = _service(isolated_paths)
     before = next(t for t in svc.get_all_tools() if t.key == "python")
     assert before.install_status == InstallStatus.MISSING
 
-    updated = svc.simulate_install("python")
+    updated = svc.mark_installed("python")
 
     assert updated is not None
     assert updated.install_status == InstallStatus.INSTALLED
@@ -166,14 +178,60 @@ def test_simulate_install_mutates_status(isolated_paths: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# test_simulate_install_unknown_key_returns_none
+# test_mark_installed_records_version
 # ---------------------------------------------------------------------------
 
 
-def test_simulate_install_unknown_key_returns_none(isolated_paths: Path) -> None:
-    """simulate_install with an unknown key must return None without raising."""
+def test_mark_installed_records_version(isolated_paths: Path) -> None:
+    """mark_installed with a version argument must update tool.version."""
     svc = _service(isolated_paths)
-    result = svc.simulate_install("no_such_tool_xyz")
+    updated = svc.mark_installed("python", version="3.12.0")
+    assert updated is not None
+    assert updated.install_status == InstallStatus.INSTALLED
+    assert updated.version == "3.12.0"
+
+
+# ---------------------------------------------------------------------------
+# test_mark_installed_unknown_key_returns_none
+# ---------------------------------------------------------------------------
+
+
+def test_mark_installed_unknown_key_returns_none(isolated_paths: Path) -> None:
+    """mark_installed with an unknown key must return None without raising."""
+    svc = _service(isolated_paths)
+    result = svc.mark_installed("no_such_tool_xyz")
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# test_mark_failed_mutates_status
+# ---------------------------------------------------------------------------
+
+
+def test_mark_failed_mutates_status(isolated_paths: Path) -> None:
+    """mark_failed must flip the in-memory status to FAILED."""
+    svc = _service(isolated_paths)
+    before = next(t for t in svc.get_all_tools() if t.key == "python")
+    assert before.install_status == InstallStatus.MISSING
+
+    updated = svc.mark_failed("python")
+
+    assert updated is not None
+    assert updated.install_status == InstallStatus.FAILED
+    # The in-memory cache must also reflect the change
+    cached = next(t for t in svc.get_all_tools() if t.key == "python")
+    assert cached.install_status == InstallStatus.FAILED
+
+
+# ---------------------------------------------------------------------------
+# test_mark_failed_unknown_key_returns_none
+# ---------------------------------------------------------------------------
+
+
+def test_mark_failed_unknown_key_returns_none(isolated_paths: Path) -> None:
+    """mark_failed with an unknown key must return None without raising."""
+    svc = _service(isolated_paths)
+    result = svc.mark_failed("no_such_tool_xyz")
     assert result is None
 
 

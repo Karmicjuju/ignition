@@ -38,6 +38,15 @@ def load_state(*, demo_mode: bool = False) -> AppStateModel:
                 raw["schema_version"] = 5
                 log.info("state.migrated", from_version=4, to_version=5)
 
+            # Migration: v5 → v6 — add install_history (empty list default).
+            # Pydantic fills the default on validate; bumping the version key
+            # ensures the re-save stamps schema_version=6 and cascading
+            # migrations from older versions land on a valid v6 dict.
+            if raw.get("schema_version") == 5:
+                raw.setdefault("install_history", [])
+                raw["schema_version"] = 6
+                log.info("state.migrated", from_version=5, to_version=6)
+
             state = AppStateModel.model_validate(raw)
         except Exception as exc:
             log.warning("state.load_failed", reason=str(exc))

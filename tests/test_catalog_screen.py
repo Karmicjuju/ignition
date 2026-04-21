@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 from textual.widgets import Button, Input, ListView
@@ -166,23 +165,17 @@ async def test_enter_on_tool_opens_detail_panel(isolated_paths: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_simulate_install_button_fires_notify(
-    isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Pressing 'Simulate Install' must call notify() with the tool name.
+async def test_install_button_visible_for_missing_tool(isolated_paths: Path) -> None:
+    """The Install button must be visible and labelled 'Install' for a MISSING tool.
 
     The first tool in the list is 'git' which starts INSTALLED (no button).
-    We navigate down two positions to reach 'docker' (MISSING) so the
-    Simulate Install button is visible.
+    We navigate down two positions to reach 'python' (MISSING) so the
+    Install button is visible.
     """
     save_state(_complete_state())
-    notify_mock = MagicMock()
 
     async with IgnitionApp(demo_mode=False).run_test() as pilot:
         screen = await _navigate_to_catalog(pilot)
-
-        # Patch notify on the live screen instance before any interaction.
-        monkeypatch.setattr(screen, "notify", notify_mock)
 
         tool_list = screen.query_one("#tool-list", ListView)
         tool_list.focus()
@@ -196,19 +189,12 @@ async def test_simulate_install_button_fires_notify(
         await pilot.press("enter")
         await pilot.pause()
 
-        btn = screen.query_one("#btn-simulate-install", Button)
+        btn = screen.query_one("#btn-install", Button)
         assert btn.display, (
-            f"Expected Simulate Install button to be visible for tool '{screen._selected_tool_key}'"
+            f"Expected Install button to be visible for tool '{screen._selected_tool_key}'"
         )
-
-        btn.press()
-        await pilot.pause()
-
-        notify_mock.assert_called_once()
-        call_text: str = notify_mock.call_args[0][0]
-        assert "Simulated install" in call_text, (
-            f"Expected notify message to mention 'Simulated install', got: {call_text!r}"
-        )
+        # Button label should be "Install" for a MISSING tool
+        assert str(btn.label) == "Install", f"Expected button label 'Install', got: {btn.label!r}"
 
 
 # ---------------------------------------------------------------------------

@@ -351,7 +351,7 @@ class InstallerEngine:
 
         # Ensure target directory exists
         _LOCAL_BIN.mkdir(parents=True, exist_ok=True)
-        dest = _LOCAL_BIN / binary_name
+        dest = _LOCAL_BIN / Path(binary_name).name
 
         # Download using curl
         rc, stdout, stderr = await _run_subprocess(["curl", "-fsSL", "-o", str(dest), url])

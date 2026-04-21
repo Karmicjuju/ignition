@@ -256,8 +256,8 @@ class OnboardingScreen(Screen[None]):
                 cb = self.query_one(f"#{cb_id}", Checkbox)
                 if cb.value:
                     selected_keys.append(tool.key)
-            except Exception:
-                pass
+            except Exception as exc:
+                self._log.warning("onboarding.custom_keys.error", exc_info=exc)
 
         self._custom_tool_keys = selected_keys
         # complete_quick_path records personas; custom tool keys go on state directly

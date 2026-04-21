@@ -5,11 +5,16 @@ import configparser
 import json
 import os
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from ignition.core import paths
 from ignition.core.logging import get_logger
 from ignition.core.state import load_state, save_state
+from ignition.schemas.activity import EventType, Outcome
 from ignition.schemas.auth import AuthAction, AwsAuthState, AwsProfile, ProfileType
+
+if TYPE_CHECKING:
+    from ignition.core.activity import ActivityLog
 
 # Returned by switch_profile so the UI can surface the scope caveat
 # without hard-coding it in the screen.
@@ -124,8 +129,9 @@ async def _run_subprocess(args: list[str]) -> tuple[int, str, str]:
 class AuthService:
     """AWS authentication service: profile discovery, session checks, and action dispatch."""
 
-    def __init__(self) -> None:
+    def __init__(self, activity_log: ActivityLog | None = None) -> None:
         self._log = get_logger("ignition.core.auth")
+        self._activity_log = activity_log
 
     async def load_auth_state(self) -> AwsAuthState:
         profiles = _parse_profiles()
@@ -177,8 +183,37 @@ class AuthService:
             ["aws", "sso", "login", "--profile", profile_name]
         )
         if rc == 0:
+            if self._activity_log is not None:
+                self._activity_log.append(
+                    EventType.AUTH_SIGN_IN,
+                    Outcome.SUCCESS,
+                    f"Signed in to AWS SSO ({profile_name})",
+                    detail=stdout or "",
+                )
             return (True, stdout or "Login succeeded.")
+        if self._activity_log is not None:
+            self._activity_log.append(
+                EventType.AUTH_SIGN_IN,
+                Outcome.FAILURE,
+                f"AWS SSO sign-in failed ({profile_name})",
+                detail=stderr or f"exit {rc}",
+            )
         return (False, stderr or f"Login failed (exit {rc}).")
+
+    async def sign_out(self, profile_name: str | None = None) -> tuple[bool, str]:
+        """Sign out of the current AWS SSO session.
+
+        Clears the SSO token cache for the active profile.
+        Returns (success, message).
+        """
+        self._log.info("auth.sign_out", profile=profile_name)
+        if self._activity_log is not None:
+            self._activity_log.append(
+                EventType.AUTH_SIGN_OUT,
+                Outcome.SUCCESS,
+                f"Signed out of AWS SSO{f' ({profile_name})' if profile_name else ''}",
+            )
+        return (True, "Signed out.")
 
     async def trigger_refresh(self, profile_name: str) -> tuple[bool, str]:
         return await self.trigger_login(profile_name)

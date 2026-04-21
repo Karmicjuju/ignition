@@ -49,15 +49,17 @@ def test_v4_state_loads_cleanly_with_aws_auth_none(isolated_paths: Path) -> None
     assert state.aws_auth is None
     # install_history filled with the v6 default.
     assert state.install_history == []
-    # And the file must be re-stamped at the new version on save.
-    assert state.schema_version == STATE_SCHEMA_VERSION == 6
+    # last_activity_event_id filled with the v7 default.
+    assert state.last_activity_event_id is None
+    # And the file must be re-stamped at the current version on save.
+    assert state.schema_version == STATE_SCHEMA_VERSION
 
 
-def test_v3_state_cascades_through_v4_to_v6(isolated_paths: Path) -> None:
-    """Cascade test: a v3 file must walk through v3→v4→v5→v6 in a single
+def test_v3_state_cascades_through_v4_to_v7(isolated_paths: Path) -> None:
+    """Cascade test: a v3 file must walk through v3→v4→v5→v6→v7 in a single
     load_state call. Without the explicit `raw["schema_version"] = N` reassignment
     in each shim, the cascade would short-circuit and the file would land
-    at an intermediate version — failing the v6 model validate.
+    at an intermediate version — failing the v7 model validate.
     """
     _write_state(
         {
@@ -76,16 +78,18 @@ def test_v3_state_cascades_through_v4_to_v6(isolated_paths: Path) -> None:
     state = load_state()
 
     assert state.install_id == "v3-install-xyz"
-    assert state.schema_version == 6
+    assert state.schema_version == STATE_SCHEMA_VERSION
     assert state.aws_auth is None
     assert state.install_history == []
-    # Re-load the persisted file to confirm save_state stamped v6.
+    assert state.last_activity_event_id is None
+    # Re-load the persisted file to confirm save_state stamped current version.
     persisted = json.loads(state_file().read_text(encoding="utf-8"))
-    assert persisted["schema_version"] == 6
+    assert persisted["schema_version"] == STATE_SCHEMA_VERSION
 
 
-def test_v5_state_migrates_to_v6(isolated_paths: Path) -> None:
-    """A native v5 file must be migrated to v6 on load, gaining install_history."""
+def test_v5_state_migrates_to_v7(isolated_paths: Path) -> None:
+    """A native v5 file must be migrated to v7 on load, gaining install_history
+    and last_activity_event_id."""
     _write_state(
         {
             "schema_version": 5,
@@ -105,13 +109,14 @@ def test_v5_state_migrates_to_v6(isolated_paths: Path) -> None:
 
     state = load_state()
     assert state.install_id == "native-v5"
-    assert state.schema_version == 6
+    assert state.schema_version == STATE_SCHEMA_VERSION
     assert state.aws_auth is None
     assert state.install_history == []
+    assert state.last_activity_event_id is None
 
 
-def test_v6_state_loads_without_migration(isolated_paths: Path) -> None:
-    """A native v6 file with install_history must round-trip unchanged."""
+def test_v6_state_migrates_to_v7(isolated_paths: Path) -> None:
+    """A native v6 file must be migrated to v7 on load, gaining last_activity_event_id."""
     _write_state(
         {
             "schema_version": 6,
@@ -132,6 +137,36 @@ def test_v6_state_loads_without_migration(isolated_paths: Path) -> None:
 
     state = load_state()
     assert state.install_id == "native-v6"
-    assert state.schema_version == 6
+    assert state.schema_version == STATE_SCHEMA_VERSION
     assert state.aws_auth is None
     assert state.install_history == []
+    assert state.last_activity_event_id is None
+
+
+def test_v7_state_loads_without_migration(isolated_paths: Path) -> None:
+    """A native v7 file must round-trip unchanged (no migration needed)."""
+    _write_state(
+        {
+            "schema_version": 7,
+            "install_id": "native-v7",
+            "created_at": "2026-04-21T00:00:00+00:00",
+            "last_launched_at": "2026-04-21T00:00:00+00:00",
+            "demo_mode": False,
+            "onboarding_complete": True,
+            "onboarding_phase": 3,
+            "selected_personas": ["devops"],
+            "accepted_tool_bundle": True,
+            "last_health_scan": None,
+            "health_summary": {},
+            "aws_auth": None,
+            "install_history": [],
+            "last_activity_event_id": None,
+        }
+    )
+
+    state = load_state()
+    assert state.install_id == "native-v7"
+    assert state.schema_version == STATE_SCHEMA_VERSION
+    assert state.aws_auth is None
+    assert state.install_history == []
+    assert state.last_activity_event_id is None

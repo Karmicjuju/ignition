@@ -22,6 +22,7 @@ def isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(paths_mod, "config_dir", lambda: config)
     monkeypatch.setattr(paths_mod, "log_dir", lambda: logs)
     monkeypatch.setattr(paths_mod, "state_file", lambda: state / "state.json")
+    monkeypatch.setattr(paths_mod, "activity_file", lambda: state / "activity.json")
     monkeypatch.setattr(paths_mod, "install_id_file", lambda: state / "install_id")
     monkeypatch.setattr(paths_mod, "cache_dir", lambda: cache)
     monkeypatch.setattr(paths_mod, "catalog_cache_dir", lambda: catalog_cache)

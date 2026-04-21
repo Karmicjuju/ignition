@@ -5,12 +5,16 @@ import os
 import stat
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ignition.core.catalog import CatalogService
 from ignition.core.logging import get_logger
 from ignition.core.state import load_state, save_state
+from ignition.schemas.activity import EventType, Outcome
 from ignition.schemas.health import CheckResult, FixType, HealthState
+
+if TYPE_CHECKING:
+    from ignition.core.activity import ActivityLog
 
 # Shell config files to check for Ignition marker, in priority order
 _SHELL_CONFIGS = [
@@ -56,11 +60,20 @@ class HealthEngine:
         # Maps check_id → target path (for AUTO chmod fixes)
         self._fix_targets: dict[str, tuple[Path, int]] = {}
 
-    async def run_scan(self, categories: list[str] | None = None) -> list[CheckResult]:
+    async def run_scan(
+        self,
+        categories: list[str] | None = None,
+        activity_log: ActivityLog | None = None,
+    ) -> list[CheckResult]:
         """Run all health checks for the given categories (or all if None).
 
         Returns a flat list of CheckResult. Individual check exceptions are caught
         and reported as NEEDS_ATTENTION rather than crashing the scan.
+
+        Args:
+            categories: Specific categories to scan; None means all.
+            activity_log: Optional ActivityLog; if provided, emits a
+                ``health_scan`` event with the issue count summary.
         """
         targets = list(categories) if categories is not None else list(ALL_CATEGORIES)
         self._log.info("health.scan.start", categories=targets)
@@ -111,6 +124,17 @@ class HealthEngine:
             save_state(state)
         except Exception as exc:
             self._log.warning("health.scan.state_save_failed", reason=str(exc))
+
+        issue_count = sum(
+            1 for r in all_results if r.state in (HealthState.NEEDS_ATTENTION, HealthState.MANUAL)
+        )
+        if activity_log is not None:
+            activity_log.append(
+                EventType.HEALTH_SCAN,
+                Outcome.SUCCESS,
+                f"Health scan: {issue_count} issue{'s' if issue_count != 1 else ''} found",
+                detail=f"Scanned categories: {', '.join(targets)}",
+            )
 
         self._log.info("health.scan.complete", total=len(all_results))
         return all_results

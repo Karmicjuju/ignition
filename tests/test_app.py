@@ -21,10 +21,13 @@ async def test_app_boots_and_quits(isolated_paths: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_demo_mode_flag(isolated_paths: Path) -> None:
-    """Demo mode seeds state (onboarding_complete=True) and routes to HomeScreen."""
+    """Demo mode seeds Scenario 1 (partially onboarded, onboarding_complete=False)
+    and routes to OnboardingScreen. The seeded state is marked demo_mode=True.
+    """
     async with IgnitionApp(demo_mode=True).run_test() as pilot:
         await pilot.pause()
-        assert isinstance(pilot.app.screen, HomeScreen)
+        # Scenario 1 leaves onboarding incomplete → OnboardingScreen
+        assert isinstance(pilot.app.screen, OnboardingScreen)
 
     state = AppStateModel.model_validate_json(state_file().read_text())
     assert state.demo_mode is True

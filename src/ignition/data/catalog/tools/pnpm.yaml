@@ -6,6 +6,7 @@ categories: [package-manager]
 persona_tags: [frontend]
 managed: false
 version_policy: flexible
+release_channel: stable
 requires_sudo: false
 health_check: "pnpm --version"
 dependencies: [node]

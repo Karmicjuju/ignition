@@ -6,6 +6,7 @@ categories: [container, orchestration]
 persona_tags: [devops]
 managed: false
 version_policy: flexible
+release_channel: stable
 requires_sudo: false
 health_check: "helm version"
 dependencies: []

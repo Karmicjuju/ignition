@@ -56,6 +56,52 @@ class CatalogService:
         self._log.info("catalog.get_all", count=len(self._tools))
         return self._tools
 
+    def get_tools(self, preferred_channel: str = "stable") -> list[ToolInfo]:
+        """Return tools filtered by the user's preferred release channel.
+
+        Channel visibility rules:
+          - "stable"       → only stable tools are shown
+          - "beta"         → stable + beta tools are shown
+          - "experimental" → stable + beta + experimental tools are shown
+          - "deprecated"   tools are always shown regardless of preferred_channel
+            (they appear in any channel so users know a tool has been deprecated).
+          - Unknown channel values default to "stable" behaviour (strict).
+
+        Args:
+            preferred_channel: The user's preferred release channel from AppStateModel.
+
+        Returns:
+            A filtered list of ToolInfo; all deprecated tools are always included.
+        """
+        _CHANNEL_ORDER = ("stable", "beta", "experimental")
+        try:
+            max_idx = _CHANNEL_ORDER.index(preferred_channel)
+        except ValueError:
+            # Unknown channel — treat as stable (most restrictive)
+            max_idx = 0
+
+        result: list[ToolInfo] = []
+        for tool in self.get_all_tools():
+            channel = tool.release_channel
+            if channel == "deprecated":
+                result.append(tool)
+                continue
+            try:
+                idx = _CHANNEL_ORDER.index(channel)
+            except ValueError:
+                # Unknown channel on a tool — treat as stable (always visible)
+                result.append(tool)
+                continue
+            if idx <= max_idx:
+                result.append(tool)
+
+        self._log.info(
+            "catalog.get_tools",
+            preferred_channel=preferred_channel,
+            count=len(result),
+        )
+        return result
+
     def get_tools_for_personas(self, persona_ids: list[str]) -> list[ToolInfo]:
         """Return tools whose persona_tags overlap with any of the given persona ids.
 

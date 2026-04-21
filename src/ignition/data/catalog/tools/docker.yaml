@@ -6,6 +6,7 @@ categories: [container, infra]
 persona_tags: [backend, devops]
 managed: true
 version_policy: managed
+release_channel: stable
 requires_sudo: false
 health_check: "docker --version"
 dependencies: []

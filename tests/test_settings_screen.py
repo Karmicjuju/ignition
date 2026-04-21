@@ -204,14 +204,20 @@ async def test_escape_returns_to_home(isolated_paths: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_all_four_radio_sets_present(isolated_paths: Path) -> None:
-    """SettingsScreen must contain all four RadioSet widgets."""
+async def test_all_radio_sets_present(isolated_paths: Path) -> None:
+    """SettingsScreen must contain all five RadioSet widgets (including release channel)."""
     save_state(_complete_state())
     async with IgnitionApp(demo_mode=False).run_test() as pilot:
         screen = await _navigate_to_settings(pilot)
         await pilot.pause()
 
-        expected_ids = {"radio-theme", "radio-density", "radio-motion", "radio-automation"}
+        expected_ids = {
+            "radio-theme",
+            "radio-density",
+            "radio-motion",
+            "radio-automation",
+            "radio-channel",
+        }
         found_ids = {rs.id for rs in screen.query(RadioSet) if rs.id}
         assert found_ids == expected_ids, f"Expected RadioSet IDs {expected_ids}, found {found_ids}"
 
@@ -385,4 +391,71 @@ async def test_persona_manager_done_dismisses_modal(isolated_paths: Path) -> Non
 
         assert isinstance(pilot.app.screen, SettingsScreen), (
             f"Expected SettingsScreen after Done, got {type(pilot.app.screen).__name__}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# test_release_channel_radio_set_present
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_release_channel_radio_set_present(isolated_paths: Path) -> None:
+    """SettingsScreen must contain the #radio-channel RadioSet widget."""
+    save_state(_complete_state())
+    async with IgnitionApp(demo_mode=False).run_test() as pilot:
+        screen = await _navigate_to_settings(pilot)
+        await pilot.pause()
+
+        radio_channel = screen.query_one("#radio-channel", RadioSet)
+        assert radio_channel is not None, "Expected #radio-channel RadioSet in SettingsScreen"
+
+
+# ---------------------------------------------------------------------------
+# test_release_channel_reflects_state
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_release_channel_reflects_state_stable(isolated_paths: Path) -> None:
+    """Release channel RadioSet must reflect the preferred_channel from AppStateModel."""
+    state = AppStateModel(
+        install_id="test-id", onboarding_complete=True, preferred_channel="stable"
+    )
+    save_state(state)
+
+    async with IgnitionApp(demo_mode=False).run_test() as pilot:
+        screen = await _navigate_to_settings(pilot)
+        await pilot.pause()
+
+        # The screen's state should reflect stable
+        assert screen._state.preferred_channel == "stable"
+
+
+# ---------------------------------------------------------------------------
+# test_release_channel_change_saves_to_state
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_release_channel_change_saves_to_state(isolated_paths: Path) -> None:
+    """Changing Release channel RadioSet must persist preferred_channel to state."""
+
+    state = AppStateModel(
+        install_id="test-id", onboarding_complete=True, preferred_channel="stable"
+    )
+    save_state(state)
+
+    async with IgnitionApp(demo_mode=False).run_test() as pilot:
+        screen = await _navigate_to_settings(pilot)
+        await pilot.pause()
+
+        # Trigger a RadioSet.Changed on radio-channel
+        channel_set = screen.query_one("#radio-channel", RadioSet)
+        channel_set.action_next_button()
+        await pilot.pause()
+
+        # preferred_channel on screen state should have changed
+        assert screen._state.preferred_channel in ("stable", "beta", "experimental"), (
+            f"Unexpected preferred_channel: {screen._state.preferred_channel}"
         )

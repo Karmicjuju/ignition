@@ -6,6 +6,7 @@ categories: [cloud, auth]
 persona_tags: [backend, frontend, devops, security, contractor]
 managed: true
 version_policy: managed
+release_channel: stable
 requires_sudo: false
 health_check: "aws --version"
 dependencies: []

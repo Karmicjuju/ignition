@@ -6,6 +6,7 @@ categories: [database, core]
 persona_tags: [backend]
 managed: false
 version_policy: flexible
+release_channel: stable
 requires_sudo: false
 health_check: "psql --version"
 dependencies: []

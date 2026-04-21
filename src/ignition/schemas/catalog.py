@@ -54,6 +54,7 @@ class ToolInfo(BaseModel):
     health_check: str = ""
     dependencies: list[str] = Field(default_factory=list)
     install_methods: PlatformInstallMethods = Field(default_factory=PlatformInstallMethods)
+    release_channel: str = "stable"
     install_status: InstallStatus = InstallStatus.MISSING
     version: str | None = None
     managed_version: str | None = None

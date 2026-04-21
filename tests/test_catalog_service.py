@@ -349,3 +349,135 @@ def test_load_remote_returns_none_on_network_error(isolated_paths: Path, tmp_pat
         max_age_seconds=0,  # always attempt a fresh fetch
     )
     assert result is None
+
+
+# ===========================================================================
+# Channel filtering tests (get_tools)
+# ===========================================================================
+
+
+def _make_tool(key: str, release_channel: str) -> ToolInfo:
+    """Build a minimal ToolInfo with a given release_channel."""
+    return ToolInfo(
+        key=key,
+        name=key.capitalize(),
+        description=f"Test tool {key}",
+        categories=["testing"],
+        persona_tags=["backend"],
+        managed=False,
+        release_channel=release_channel,
+    )
+
+
+# ---------------------------------------------------------------------------
+# test_stable_user_sees_only_stable
+# ---------------------------------------------------------------------------
+
+
+def test_stable_user_sees_only_stable(isolated_paths: Path) -> None:
+    """A stable preferred_channel must exclude beta and experimental tools."""
+    svc = CatalogService()
+    # Override in-memory tools directly
+    svc._tools = [
+        _make_tool("stable-tool", "stable"),
+        _make_tool("beta-tool", "beta"),
+        _make_tool("experimental-tool", "experimental"),
+    ]
+    result = svc.get_tools(preferred_channel="stable")
+    keys = {t.key for t in result}
+    assert "stable-tool" in keys
+    assert "beta-tool" not in keys
+    assert "experimental-tool" not in keys
+
+
+# ---------------------------------------------------------------------------
+# test_beta_user_sees_stable_and_beta
+# ---------------------------------------------------------------------------
+
+
+def test_beta_user_sees_stable_and_beta(isolated_paths: Path) -> None:
+    """A beta preferred_channel must include stable + beta but not experimental."""
+    svc = CatalogService()
+    svc._tools = [
+        _make_tool("stable-tool", "stable"),
+        _make_tool("beta-tool", "beta"),
+        _make_tool("experimental-tool", "experimental"),
+    ]
+    result = svc.get_tools(preferred_channel="beta")
+    keys = {t.key for t in result}
+    assert "stable-tool" in keys
+    assert "beta-tool" in keys
+    assert "experimental-tool" not in keys
+
+
+# ---------------------------------------------------------------------------
+# test_experimental_user_sees_all_three
+# ---------------------------------------------------------------------------
+
+
+def test_experimental_user_sees_all_three(isolated_paths: Path) -> None:
+    """An experimental preferred_channel must include stable + beta + experimental."""
+    svc = CatalogService()
+    svc._tools = [
+        _make_tool("stable-tool", "stable"),
+        _make_tool("beta-tool", "beta"),
+        _make_tool("experimental-tool", "experimental"),
+    ]
+    result = svc.get_tools(preferred_channel="experimental")
+    keys = {t.key for t in result}
+    assert "stable-tool" in keys
+    assert "beta-tool" in keys
+    assert "experimental-tool" in keys
+
+
+# ---------------------------------------------------------------------------
+# test_deprecated_always_shown
+# ---------------------------------------------------------------------------
+
+
+def test_deprecated_tool_always_shown(isolated_paths: Path) -> None:
+    """Deprecated tools must always be included regardless of preferred_channel."""
+    svc = CatalogService()
+    svc._tools = [
+        _make_tool("deprecated-tool", "deprecated"),
+        _make_tool("beta-tool", "beta"),
+    ]
+    # stable channel excludes beta, but deprecated is always shown
+    result = svc.get_tools(preferred_channel="stable")
+    keys = {t.key for t in result}
+    assert "deprecated-tool" in keys
+    assert "beta-tool" not in keys
+
+
+# ---------------------------------------------------------------------------
+# test_unknown_channel_defaults_to_stable
+# ---------------------------------------------------------------------------
+
+
+def test_unknown_preferred_channel_defaults_to_stable(isolated_paths: Path) -> None:
+    """An unknown preferred_channel must fall back to stable behaviour."""
+    svc = CatalogService()
+    svc._tools = [
+        _make_tool("stable-tool", "stable"),
+        _make_tool("beta-tool", "beta"),
+    ]
+    result = svc.get_tools(preferred_channel="nightly")
+    keys = {t.key for t in result}
+    assert "stable-tool" in keys
+    assert "beta-tool" not in keys
+
+
+# ---------------------------------------------------------------------------
+# test_bundled_tools_all_stable_channel
+# ---------------------------------------------------------------------------
+
+
+def test_bundled_tools_all_have_stable_channel(isolated_paths: Path) -> None:
+    """All 12 bundled tool manifests must have release_channel == 'stable'."""
+    svc = CatalogService()
+    tools = svc.get_all_tools()
+    non_stable = [t for t in tools if t.release_channel != "stable"]
+    assert non_stable == [], (
+        f"Expected all bundled tools to have release_channel='stable', "
+        f"found non-stable: {[t.key for t in non_stable]}"
+    )

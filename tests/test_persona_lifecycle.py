@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 from ignition.core.state import save_state
 from ignition.schemas.catalog import InstallStatus, PlatformInstallMethods, ToolInfo
-from ignition.schemas.state import AppStateModel
+from ignition.schemas.state import STATE_SCHEMA_VERSION, AppStateModel
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -232,17 +232,17 @@ def test_conflict_resolution_inactive_persona_not_counted(isolated_paths: Path) 
 # ---------------------------------------------------------------------------
 
 
-def test_selected_personas_round_trip_v8(isolated_paths: Path) -> None:
-    """selected_personas persists and loads correctly with schema_version=8."""
+def test_selected_personas_round_trip_current_version(isolated_paths: Path) -> None:
+    """selected_personas persists and loads correctly at the current schema version."""
     state = _make_state(personas=["backend", "security"])
-    assert state.schema_version == 8
+    assert state.schema_version == STATE_SCHEMA_VERSION
     save_state(state)
 
     from ignition.core.state import load_state
 
     loaded = load_state()
     assert set(loaded.selected_personas) == {"backend", "security"}
-    assert loaded.schema_version == 8
+    assert loaded.schema_version == STATE_SCHEMA_VERSION
 
 
 # ---------------------------------------------------------------------------
@@ -277,7 +277,7 @@ def test_migration_v7_to_v8_adds_update_fields(isolated_paths: Path) -> None:
     from ignition.core.state import load_state
 
     loaded = load_state()
-    assert loaded.schema_version == 8
+    assert loaded.schema_version == STATE_SCHEMA_VERSION
     assert loaded.last_update_check is None
     assert loaded.available_updates == []
     assert "backend" in loaded.selected_personas

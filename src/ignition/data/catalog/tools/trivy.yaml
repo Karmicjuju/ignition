@@ -6,6 +6,7 @@ categories: [security, scanning]
 persona_tags: [security]
 managed: true
 version_policy: managed
+release_channel: stable
 requires_sudo: false
 health_check: "trivy --version"
 dependencies: []

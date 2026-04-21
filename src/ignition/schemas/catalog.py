@@ -1,21 +1,30 @@
 from __future__ import annotations
 
-import enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 CATALOG_SCHEMA_VERSION = 1
 
 
-class InstallStatus(enum.StrEnum):
+class InstallStatus(StrEnum):
     INSTALLED = "installed"
     OUTDATED = "outdated"
     MISSING = "missing"
     UNMANAGED = "unmanaged"
+    FAILED = "failed"
+
+
+class InstallMethod(StrEnum):
+    BREW = "brew"
+    APT = "apt"
+    BINARY = "binary"
+    COPY_PASTE = "copy_paste"
 
 
 class InstallStep(BaseModel):
-    method: str  # brew | apt | binary | npm | pip | script
+    # str keeps forward-compat with manifest extensions beyond InstallMethod enum values
+    method: str
     package: str = ""
     cask: bool = False
     repo: str = ""

@@ -11,6 +11,9 @@ from textual.screen import Screen
 from textual.widgets import Button, Footer, Header, Input, Label, ListItem, ListView, Static
 
 from ignition.core.catalog import CatalogService
+from ignition.core.health import HealthEngine
+from ignition.core.installer import InstallerEngine, InstallResult
+from ignition.core.state import save_state
 from ignition.schemas.catalog import InstallStatus, ToolInfo
 from ignition.schemas.state import AppStateModel
 
@@ -21,6 +24,7 @@ _STATUS_CLASS: dict[InstallStatus, str] = {
     InstallStatus.OUTDATED: "status-outdated",
     InstallStatus.MISSING: "status-missing",
     InstallStatus.UNMANAGED: "status-unmanaged",
+    InstallStatus.FAILED: "status-failed",
 }
 
 _STATUS_LABEL: dict[InstallStatus, str] = {
@@ -28,14 +32,15 @@ _STATUS_LABEL: dict[InstallStatus, str] = {
     InstallStatus.OUTDATED: "Outdated",
     InstallStatus.MISSING: "Missing",
     InstallStatus.UNMANAGED: "Unmanaged",
+    InstallStatus.FAILED: "Failed",
 }
 
 
 class ToolCatalogScreen(Screen[None]):
     """Tool catalog browser with category sidebar, tool list, and detail panel.
 
-    Allows browsing, searching, and simulating tool installs without touching
-    real system state. All mutations are in-memory only (M2 scope).
+    Allows browsing, searching, and installing tools. Install operations run in
+    a background worker and report progress via a Static widget in the detail panel.
     """
 
     class CatalogRefreshed(Message):
@@ -132,6 +137,11 @@ class ToolCatalogScreen(Screen[None]):
         color: $text-secondary;
     }
 
+    .status-failed {
+        color: $error;
+        text-style: bold;
+    }
+
     #detail-panel {
         height: 35%;
         border-top: tall $accent;
@@ -158,7 +168,16 @@ class ToolCatalogScreen(Screen[None]):
         margin-bottom: 1;
     }
 
-    #btn-simulate-install {
+    #install-progress {
+        color: $text-secondary;
+        margin-bottom: 1;
+    }
+
+    #install-progress.hidden {
+        display: none;
+    }
+
+    #btn-install {
         margin-top: 1;
     }
     """
@@ -167,9 +186,12 @@ class ToolCatalogScreen(Screen[None]):
         super().__init__()
         self._state = state
         self._catalog = CatalogService()
+        self._installer = InstallerEngine(state)
+        self._health = HealthEngine()
         self._selected_tool_key: str | None = None
         self._active_category: str = "All"
         self._search_active: bool = False
+        self._install_in_progress: bool = False
 
     # ------------------------------------------------------------------
     # compose
@@ -195,11 +217,12 @@ class ToolCatalogScreen(Screen[None]):
                 yield Static("", id="detail-name")
                 yield Static("", id="detail-description")
                 yield Static("", id="detail-meta")
+                yield Static("", id="install-progress", classes="hidden")
                 yield Button(
-                    "Simulate Install",
-                    id="btn-simulate-install",
+                    "Install",
+                    id="btn-install",
                     variant="primary",
-                    tooltip="Simulate tool installation (no real changes — demo only).",
+                    tooltip="Install this tool on the current system.",
                 )
         yield Footer()
 
@@ -258,8 +281,8 @@ class ToolCatalogScreen(Screen[None]):
         tool_list = self.query_one("#tool-list", ListView)
         tool_list.clear()
         for tool in tools:
-            status_class = _STATUS_CLASS[tool.install_status]
-            status_text = _STATUS_LABEL[tool.install_status]
+            status_class = _STATUS_CLASS.get(tool.install_status, "status-missing")
+            status_text = _STATUS_LABEL.get(tool.install_status, "Unknown")
             name_static = Static(tool.name, classes="tool-name")
             desc_static = Static(tool.description, classes="tool-description")
             status_static = Static(status_text, classes=f"tool-status {status_class}")
@@ -311,7 +334,7 @@ class ToolCatalogScreen(Screen[None]):
 
     def _show_detail(self, tool: ToolInfo) -> None:
         """Populate and reveal the bottom detail panel for the given tool."""
-        status_text = _STATUS_LABEL[tool.install_status]
+        status_text = _STATUS_LABEL.get(tool.install_status, "Unknown")
         managed_text = (
             "Yes — version pinned by Reactor ops" if tool.managed else "No — self-managed"
         )
@@ -325,9 +348,27 @@ class ToolCatalogScreen(Screen[None]):
             f"Managed: {managed_text}",
         ]
         self.query_one("#detail-meta", Static).update("\n".join(meta_lines))
-        # Show/hide simulate-install button based on current status
-        btn = self.query_one("#btn-simulate-install", Button)
-        btn.display = tool.install_status != InstallStatus.INSTALLED
+
+        # Configure install button based on current status
+        btn = self.query_one("#btn-install", Button)
+        if tool.install_status == InstallStatus.INSTALLED:
+            btn.label = "Installed"
+            btn.disabled = True
+            btn.display = False
+        elif tool.install_status == InstallStatus.FAILED:
+            btn.label = "Failed — Retry"
+            btn.disabled = False
+            btn.display = True
+        else:
+            btn.label = "Install"
+            btn.disabled = False
+            btn.display = True
+
+        # Hide progress widget when showing a new tool
+        progress = self.query_one("#install-progress", Static)
+        progress.add_class("hidden")
+        progress.update("")
+
         # Reveal panel
         self.query_one("#detail-panel").remove_class("hidden")
 
@@ -372,22 +413,71 @@ class ToolCatalogScreen(Screen[None]):
             self._populate_tool_list(filtered)
 
     # ------------------------------------------------------------------
-    # simulate install
+    # install
     # ------------------------------------------------------------------
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id != "btn-simulate-install":
+        if event.button.id != "btn-install":
             return
         if self._selected_tool_key is None:
             return
-        updated = self._catalog.simulate_install(self._selected_tool_key)
-        if updated is None:
+        if self._install_in_progress:
             return
-        # Refresh the detail panel to reflect INSTALLED status
-        self._show_detail(updated)
-        # Repopulate the tool list so the status badge updates
+        tool = self._find_tool(self._selected_tool_key)
+        if tool is None:
+            return
+        self._run_install(tool)
+
+    @work(exclusive=False)
+    async def _run_install(self, tool: ToolInfo) -> None:
+        """Run the installer in an async worker and update UI on completion."""
+        self._install_in_progress = True
+        btn = self.query_one("#btn-install", Button)
+        btn.label = "Installing…"
+        btn.disabled = True
+
+        progress = self.query_one("#install-progress", Static)
+        progress.remove_class("hidden")
+
+        def _on_progress(msg: str) -> None:
+            self.call_from_thread(progress.update, msg)
+
+        result: InstallResult = await self._installer.install(tool, progress_cb=_on_progress)
+
+        if result.success:
+            self._catalog.mark_installed(tool.key, version=result.detected_version)
+            save_state(self._state)
+            btn.label = "Installed"
+            btn.disabled = True
+            btn.display = False
+            self.notify(f"{tool.name} installed successfully.")
+        else:
+            self._catalog.mark_failed(tool.key)
+            save_state(self._state)
+            btn.label = "Failed — Retry"
+            btn.disabled = False
+            error_msg = result.error or "Installation failed."
+            self.notify(f"{tool.name}: {error_msg}", severity="error")
+
+        self._install_in_progress = False
+
+        # Refresh tool list so status badge updates
         self._repopulate_current_view()
-        self.notify(f"Simulated install of {updated.name}.")
+
+        # Trigger post-install health re-check in background
+        self._post_install_health_check()
+
+    @work(thread=True)
+    def _post_install_health_check(self) -> None:
+        """Re-run the tools health scan after an install completes."""
+        import asyncio
+
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(self._health.run_scan(categories=["tools"]))
+        finally:
+            loop.close()
+        self._repopulate_current_view()
 
     def _repopulate_current_view(self) -> None:
         """Refresh tool list using the current active filter."""

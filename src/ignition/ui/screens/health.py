@@ -279,12 +279,9 @@ class HealthScreen(Screen[None]):
             if suffixes:
                 title += "  —  " + "  ".join(suffixes)
 
-            collapsible = Collapsible(title=title, id=f"cat-{cat}")
             rows: list[IssueRow] = [IssueRow(r) for r in cat_results]
-
+            collapsible = Collapsible(*rows, title=title, id=f"cat-{cat}")
             await container.mount(collapsible)
-            for row in rows:
-                await collapsible.mount(row)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id or ""

@@ -42,6 +42,43 @@ A1–A3 are likely already clean — but this gate always runs them explicitly t
 
 ---
 
+### P2 — No post-composition mounts onto container-wrapping widgets
+
+Textual widgets like `Collapsible` and `TabbedContent` wrap their children in an inner
+container (`Contents`, `TabPane`, etc.) **only during `compose()`**. If you mount the parent
+first and then call `.mount(child)` on it afterward, children land directly on the parent node
+and bypass the inner container — making CSS rules like `&.-collapsed > Contents { display:
+none }` invisible to those children.
+
+The correct pattern is to pass children as positional args to the constructor:
+
+```python
+# WRONG — children bypass Contents, collapse never hides them
+collapsible = Collapsible(title=title)
+await container.mount(collapsible)
+for child in children:
+    await collapsible.mount(child)
+
+# RIGHT — children are routed through compose_add_child → Contents
+collapsible = Collapsible(*children, title=title)
+await container.mount(collapsible)
+```
+
+**Check:** Look for `.mount(` calls on a local widget variable (not `container` or `self`):
+
+```bash
+grep -rn "await [a-z_]\+\.mount(" src/ignition/ui/ | grep -Ev "await (container|self)\."
+```
+
+**PASS:** No output (zero matches).
+**On FAIL:** Each match is a suspect post-composition mount. Confirm whether the receiver is a
+container-wrapping widget (`Collapsible`, `TabbedContent`, etc.). If so, refactor to pass
+children as positional constructor args instead.
+**BLOCKED if:** The widget genuinely requires dynamic child injection after mount — document
+why in a comment and suppress this check for that line.
+
+---
+
 ## Assertion Loop
 
 ### Iteration Protocol

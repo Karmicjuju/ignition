@@ -10,7 +10,7 @@ from ignition.app import IgnitionApp
 from ignition.core.state import save_state
 from ignition.schemas.health import CheckResult, FixType, HealthState
 from ignition.schemas.state import AppStateModel
-from ignition.ui.screens.health import HealthScreen
+from ignition.ui.screens.health import HealthScreen, IssueRow
 from ignition.ui.screens.home import HomeScreen
 
 # ---------------------------------------------------------------------------
@@ -116,6 +116,44 @@ async def test_health_screen_shows_collapsibles_after_scan(isolated_paths: Path)
 
             collapsibles = list(screen.query(Collapsible))
             assert collapsibles, "Expected at least one Collapsible after scan"
+
+
+# ---------------------------------------------------------------------------
+# test_collapsed_section_hides_rows
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_collapsed_section_hides_rows(isolated_paths: Path) -> None:
+    """Collapsible sections start collapsed and hide their IssueRow children."""
+    save_state(_complete_state())
+
+    mock_results = _make_results()
+
+    with patch("ignition.core.health.HealthEngine.run_scan", new_callable=AsyncMock) as mock_scan:
+        mock_scan.return_value = mock_results
+        async with IgnitionApp(demo_mode=False).run_test() as pilot:
+            screen = await _navigate_to_health(pilot)
+            await pilot.pause()
+            await pilot.pause()
+
+            collapsibles = list(screen.query(Collapsible))
+            assert collapsibles, "Expected at least one Collapsible after scan"
+
+            for collapsible in collapsibles:
+                assert collapsible.collapsed is True, (
+                    f"Collapsible {collapsible.id!r} should start collapsed"
+                )
+                # IssueRows must be inside Contents (not directly on Collapsible)
+                # so the CSS &.-collapsed > Contents { display: none } applies.
+                contents = collapsible.query_one(Collapsible.Contents)
+                assert contents.display is False, (
+                    f"Contents of collapsed {collapsible.id!r} should be hidden"
+                )
+                # Rows must exist inside Contents (confirms composition routing)
+                assert list(contents.query(IssueRow)), (
+                    f"IssueRows should be inside Contents of {collapsible.id!r}"
+                )
 
 
 # ---------------------------------------------------------------------------

@@ -149,3 +149,22 @@ Key file paths:
 - App: src/ignition/app.py
 - YAMLs: src/ignition/data/catalog/tools/*.yaml (all 12)
 - Tests: tests/test_recommendations.py (new), tests/test_updates_screen.py (new), tests/test_settings_screen.py (extended), tests/test_catalog_service.py (extended)
+
+---
+
+# Sprint 2 — UI Layer (Layer 3 only)
+
+**Status:** COMPLETED
+
+## Layer 3 — UI (ui-builder)
+
+- [x] U1: ui/screens/updates.py — Ignition self-update section: SelfUpdater integration, check worker, upgrade worker, state persistence (last_ignition_update_check, ignition_available_version)
+- [x] U2: ui/screens/settings.py — Health scan interval RadioSet (Off/15m/30m/60m) with ScanIntervalChanged message; Analytics section with telemetry Checkbox; tooltip= added to all 12 pre-existing RadioButton instances
+- [x] U3: ui/screens/home.py — #health-issue-badge (count of NEEDS_ATTENTION+MANUAL categories); #ignition-update-banner (from state.ignition_available_version); on_screen_resume() refreshes both from fresh state
+- [x] U4: app.py — scheduled health scan via set_interval + _scan_timer; _scheduled_health_scan @work coroutine with new-issue notification; on_scan_interval_changed handler; timer cleanup in on_unmount
+
+## Notes
+
+- ScanIntervalChanged message defined in settings.py, imported in app.py
+- ruff lint + ruff format: all clean
+- screen-reviewer: all 4 files PASS (A8 fixed: 12 RadioButton tooltips added to settings.py)

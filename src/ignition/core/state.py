@@ -72,6 +72,15 @@ def load_state(*, demo_mode: bool = False) -> AppStateModel:
                 raw["schema_version"] = 9
                 log.info("state.migrated", from_version=8, to_version=9)
 
+            # Migration: v9 → v10 — add self-update tracking fields.
+            # Pydantic fills the defaults on validate; bumping the version key
+            # ensures the re-save stamps schema_version=10.
+            if raw.get("schema_version") == 9:
+                raw.setdefault("last_ignition_update_check", None)
+                raw.setdefault("ignition_available_version", None)
+                raw["schema_version"] = 10
+                log.info("state.migrated", from_version=9, to_version=10)
+
             state = AppStateModel.model_validate(raw)
         except Exception as exc:
             log.warning("state.load_failed", reason=str(exc))

@@ -6,6 +6,7 @@ from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
+from textual.message import Message
 from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, Checkbox, Footer, Header, Label, RadioButton, RadioSet, Static
 
@@ -13,6 +14,19 @@ from ignition.core.config import load_config, save_config
 from ignition.core.state import save_state
 from ignition.schemas.config import AppConfigModel
 from ignition.schemas.state import AppStateModel
+
+
+class ScanIntervalChanged(Message):
+    """Posted when the user changes the health scan interval setting.
+
+    Attributes:
+        interval: New interval value — one of "off", "15m", "30m", "60m".
+    """
+
+    def __init__(self, interval: str) -> None:
+        super().__init__()
+        self.interval = interval
+
 
 _ALL_PERSONAS: list[tuple[str, str]] = [
     ("backend", "Backend Engineer"),
@@ -89,6 +103,25 @@ class SettingsScreen(Screen[None]):
         margin-top: 1;
         width: auto;
     }
+
+    #analytics-section {
+        margin-top: 2;
+        border-top: solid $surface;
+        padding-top: 1;
+        height: auto;
+    }
+
+    #analytics-title {
+        text-style: bold;
+        color: $primary;
+        margin-bottom: 1;
+    }
+
+    #telemetry-description {
+        color: $text-secondary;
+        margin-top: 1;
+        margin-left: 4;
+    }
     """
 
     def __init__(self, state: AppStateModel) -> None:
@@ -108,11 +141,13 @@ class SettingsScreen(Screen[None]):
                         "Dark",
                         id="theme-dark",
                         value=self._config.theme == "dark",
+                        tooltip="Use the dark terminal theme.",
                     )
                     yield RadioButton(
                         "Light",
                         id="theme-light",
                         value=self._config.theme == "light",
+                        tooltip="Use the light terminal theme.",
                     )
 
             with Horizontal(classes="settings-row"):
@@ -122,11 +157,13 @@ class SettingsScreen(Screen[None]):
                         "Full",
                         id="density-full",
                         value=self._config.density == "full",
+                        tooltip="Full layout — more whitespace and larger cards.",
                     )
                     yield RadioButton(
                         "Compact",
                         id="density-compact",
                         value=self._config.density == "compact",
+                        tooltip="Compact layout — reduced margins for smaller terminals.",
                     )
 
             with Horizontal(classes="settings-row"):
@@ -136,11 +173,13 @@ class SettingsScreen(Screen[None]):
                         "Standard",
                         id="motion-standard",
                         value=self._config.motion == "standard",
+                        tooltip="Enable standard transition animations.",
                     )
                     yield RadioButton(
                         "Reduced",
                         id="motion-reduced",
                         value=self._config.motion == "reduced",
+                        tooltip="Reduce animations for motion sensitivity.",
                     )
 
             with Horizontal(classes="settings-row"):
@@ -150,16 +189,22 @@ class SettingsScreen(Screen[None]):
                         "Observe",
                         id="automation-observe",
                         value=self._config.automation_level == "observe",
+                        tooltip="Observe mode — Ignition reports issues but takes no action.",
                     )
                     yield RadioButton(
                         "Assist",
                         id="automation-assist",
                         value=self._config.automation_level == "assist",
+                        tooltip=(
+                            "Assist mode — Ignition suggests and applies safe fixes"
+                            " with confirmation."
+                        ),
                     )
                     yield RadioButton(
                         "Autopilot",
                         id="automation-autopilot",
                         value=self._config.automation_level == "autopilot",
+                        tooltip="Autopilot mode — Ignition applies all safe fixes automatically.",
                     )
 
             with Horizontal(classes="settings-row"):
@@ -169,17 +214,65 @@ class SettingsScreen(Screen[None]):
                         "Stable",
                         id="channel-stable",
                         value=self._state.preferred_channel == "stable",
+                        tooltip="Stable channel — production-ready tool versions only.",
                     )
                     yield RadioButton(
                         "Beta",
                         id="channel-beta",
                         value=self._state.preferred_channel == "beta",
+                        tooltip="Beta channel — includes stable and beta tool versions.",
                     )
                     yield RadioButton(
                         "Experimental",
                         id="channel-experimental",
                         value=self._state.preferred_channel == "experimental",
+                        tooltip=(
+                            "Experimental channel — includes all versions including pre-release."
+                        ),
                     )
+
+            with Horizontal(classes="settings-row"):
+                yield Label("Health scan interval", classes="settings-label")
+                _scan_interval = self._config.health_scan_interval or "30m"
+                with RadioSet(id="radio-scan-interval", classes="settings-control"):
+                    yield RadioButton(
+                        "Off",
+                        id="scan-interval-off",
+                        value=_scan_interval == "off",
+                        tooltip="Disable automatic background health scans.",
+                    )
+                    yield RadioButton(
+                        "15 min",
+                        id="scan-interval-15m",
+                        value=_scan_interval == "15m",
+                        tooltip="Run a background health scan every 15 minutes.",
+                    )
+                    yield RadioButton(
+                        "30 min",
+                        id="scan-interval-30m",
+                        value=_scan_interval == "30m",
+                        tooltip="Run a background health scan every 30 minutes.",
+                    )
+                    yield RadioButton(
+                        "60 min",
+                        id="scan-interval-60m",
+                        value=_scan_interval == "60m",
+                        tooltip="Run a background health scan every 60 minutes.",
+                    )
+
+            with Vertical(id="analytics-section"):
+                yield Static("Analytics", id="analytics-title")
+                yield Checkbox(
+                    "Enable anonymous usage data",
+                    id="chk-telemetry",
+                    value=self._config.telemetry_enabled,
+                    tooltip="Send anonymous usage data to help improve Ignition.",
+                )
+                yield Static(
+                    "Anonymous usage data helps improve Ignition."
+                    " No personal information is collected.",
+                    id="telemetry-description",
+                )
 
             with Vertical(id="personas-section"):
                 yield Static("Personas", id="personas-title")
@@ -219,10 +312,31 @@ class SettingsScreen(Screen[None]):
         elif radio_id == "radio-channel":
             self._state.preferred_channel = selected_label
             save_state(self._state)
+        elif radio_id == "radio-scan-interval":
+            # Map the human-readable label back to the config token
+            _label_to_token = {
+                "off": "off",
+                "15 min": "15m",
+                "30 min": "30m",
+                "60 min": "60m",
+            }
+            interval_token = _label_to_token.get(selected_label, "30m")
+            self._config.health_scan_interval = interval_token
+            save_config(self._config)
+            self.post_message(ScanIntervalChanged(interval_token))
         else:
             return
 
         self.notify(f"Setting saved: {radio_id.replace('radio-', '')} -> {selected_label}")
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        """Handle the telemetry checkbox toggle."""
+        if (event.checkbox.id or "") != "chk-telemetry":
+            return
+        self._config.telemetry_enabled = event.value
+        save_config(self._config)
+        state_msg = "enabled" if event.value else "disabled"
+        self.notify(f"Analytics {state_msg}.")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle Settings button presses."""

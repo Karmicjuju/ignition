@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from datetime import UTC, datetime
 from typing import ClassVar
 
 from textual import work
@@ -13,6 +14,8 @@ from textual.widgets import Button, Footer, Header, Static
 
 from ignition.core.activity import ActivityLog
 from ignition.core.catalog import CatalogService
+from ignition.core.self_updater import SelfUpdateInfo, SelfUpdater
+from ignition.core.state import save_state
 from ignition.core.updater import UpdateEngine
 from ignition.schemas.catalog import ToolInfo
 from ignition.schemas.state import AppStateModel
@@ -47,6 +50,38 @@ class UpdatesScreen(Screen[None]):
         margin-bottom: 1;
         padding-bottom: 1;
         border-bottom: solid $surface;
+    }
+
+    #ignition-section {
+        height: auto;
+        margin-bottom: 2;
+        border: round $surface;
+        padding: 1 2;
+    }
+
+    #ignition-section-header {
+        text-style: bold;
+        color: $primary;
+        margin-bottom: 1;
+    }
+
+    #ignition-version-row {
+        height: auto;
+        align: left middle;
+        margin-bottom: 1;
+    }
+
+    #ignition-version-status {
+        color: $text-secondary;
+        width: 1fr;
+    }
+
+    #btn-self-upgrade {
+        width: auto;
+    }
+
+    #self-upgrade-done {
+        color: $success;
     }
 
     #toolbar {
@@ -151,6 +186,22 @@ class UpdatesScreen(Screen[None]):
         yield Header(show_clock=True)
         with Vertical(id="updates-container"):
             yield Static("Updates", id="updates-title")
+
+            # --- Ignition self-update section ---
+            with Vertical(id="ignition-section"):
+                yield Static("Ignition", id="ignition-section-header")
+                with Horizontal(id="ignition-version-row"):
+                    yield Static(
+                        "Checking for updates…",
+                        id="ignition-version-status",
+                    )
+                    yield Button(
+                        "Upgrade Ignition",
+                        id="btn-self-upgrade",
+                        variant="warning",
+                        tooltip="Upgrade Ignition to the latest version via pipx.",
+                    )
+
             with Horizontal(id="toolbar"):
                 yield Button(
                     "Update all managed",
@@ -180,7 +231,11 @@ class UpdatesScreen(Screen[None]):
 
     def on_mount(self) -> None:
         """Populate tool rows and set update-all button state after mount."""
+        # Hide the upgrade button until the check resolves
+        with contextlib.suppress(Exception):
+            self.query_one("#btn-self-upgrade", Button).display = False
         self._refresh_view()
+        self._check_self_update()
 
     # ------------------------------------------------------------------
     # view population
@@ -251,6 +306,9 @@ class UpdatesScreen(Screen[None]):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id or ""
+        if btn_id == "btn-self-upgrade":
+            self._run_self_upgrade()
+            return
         if btn_id == "btn-update-all-managed":
             self._run_update_all()
             return
@@ -353,3 +411,64 @@ class UpdatesScreen(Screen[None]):
             progress.update(f"{status}…")
         except Exception:
             pass
+
+    # ------------------------------------------------------------------
+    # self-update workers
+    # ------------------------------------------------------------------
+
+    @work(exclusive=False)
+    async def _check_self_update(self) -> None:
+        """Check PyPI for a newer version of Ignition and update the UI."""
+        updater = SelfUpdater(self._activity_log)
+        info: SelfUpdateInfo | None = await updater.check()
+
+        # Persist check result to state
+        self._state.last_ignition_update_check = datetime.now(UTC)
+        self._state.ignition_available_version = info.available_version if info else None
+        save_state(self._state)
+
+        with contextlib.suppress(Exception):
+            status_widget = self.query_one("#ignition-version-status", Static)
+            btn = self.query_one("#btn-self-upgrade", Button)
+            if info is None:
+                status_widget.update("Ignition is up to date")
+                btn.display = False
+            else:
+                status_widget.update(
+                    f"Version {info.available_version} available (current: {info.current_version})"
+                )
+                btn.display = True
+
+    @work(exclusive=True)
+    async def _run_self_upgrade(self) -> None:
+        """Run pipx upgrade ignition and report the result."""
+        # Disable the button while upgrading
+        with contextlib.suppress(Exception):
+            self.query_one("#btn-self-upgrade", Button).disabled = True
+        with contextlib.suppress(Exception):
+            self.query_one("#ignition-version-status", Static).update("Upgrading Ignition…")
+
+        updater = SelfUpdater(self._activity_log)
+        success, output = await updater.upgrade()
+
+        if success:
+            # Replace button with a done message
+            with contextlib.suppress(Exception):
+                btn = self.query_one("#btn-self-upgrade", Button)
+                btn.display = False
+            with contextlib.suppress(Exception):
+                self.query_one("#ignition-version-status", Static).update(
+                    "Restart required — quit and relaunch Ignition to use the new version."
+                )
+            self.app.notify(
+                "Ignition upgraded. Restart to apply changes.",
+                title="Ignition Updated",
+            )
+        else:
+            with contextlib.suppress(Exception):
+                self.query_one("#btn-self-upgrade", Button).disabled = False
+            self.app.notify(
+                f"Upgrade failed: {output[:100]}. Try: pipx upgrade ignition",
+                severity="error",
+                title="Ignition Upgrade Failed",
+            )

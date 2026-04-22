@@ -6,23 +6,33 @@ from typing import ClassVar
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
+from textual.timer import Timer
 from textual.widgets import Static
 
 from ignition.core.activity import ActivityLog
 from ignition.core.catalog import CatalogService
+from ignition.core.config import load_config
 from ignition.core.demo import seed_demo_state
+from ignition.core.health import HealthEngine
 from ignition.core.installer import InstallerEngine
 from ignition.core.logging import get_logger
 from ignition.core.onboarding import OnboardingService
 from ignition.core.state import load_state, save_state
 from ignition.core.updater import UpdateEngine
+from ignition.schemas.health import HealthState
 from ignition.schemas.state import AppStateModel
 from ignition.ui.screens.auth import AuthScreen
 from ignition.ui.screens.catalog import ToolCatalogScreen
 from ignition.ui.screens.health import HealthScreen
 from ignition.ui.screens.home import HomeScreen
 from ignition.ui.screens.onboarding import OnboardingComplete, OnboardingScreen
-from ignition.ui.screens.settings import SettingsScreen
+from ignition.ui.screens.settings import ScanIntervalChanged, SettingsScreen
+
+_SCAN_INTERVAL_SECONDS: dict[str, int] = {
+    "15m": 900,
+    "30m": 1800,
+    "60m": 3600,
+}
 
 
 class IgnitionApp(App[None]):
@@ -61,6 +71,7 @@ class IgnitionApp(App[None]):
         self._log = get_logger("ignition.app")
         self._current_state: AppStateModel | None = None
         self._activity_log = ActivityLog()
+        self._scan_timer: Timer | None = None
 
     def compose(self) -> ComposeResult:
         if self._demo_mode:
@@ -81,6 +92,13 @@ class IgnitionApp(App[None]):
         else:
             self.push_screen(HomeScreen(state, self._activity_log))
             self._check_updates_on_launch()
+
+        # Start scheduled health scan timer based on config
+        config = load_config()
+        interval = config.health_scan_interval or "30m"
+        seconds = _SCAN_INTERVAL_SECONDS.get(interval)
+        if seconds is not None:
+            self._scan_timer = self.set_interval(seconds, self._scheduled_health_scan)
 
     @work(thread=True)
     def _check_updates_on_launch(self) -> None:
@@ -166,5 +184,65 @@ class IgnitionApp(App[None]):
 
         self.push_screen(OperatorPanel(self._current_state))
 
+    @work(exclusive=False)
+    async def _scheduled_health_scan(self) -> None:
+        """Perform a background health scan and notify on new issues."""
+        if self._current_state is None:
+            return
+
+        previous_summary = dict(self._current_state.health_summary)
+        engine = HealthEngine()
+        await engine.run_scan(
+            previous_summary=previous_summary,
+            activity_log=self._activity_log,
+        )
+
+        # Reload state to pick up changes the engine saved
+        self._current_state = load_state()
+
+        if engine.last_new_issues:
+            n = len(engine.last_new_issues)
+            new_values = {
+                self._current_state.health_summary.get(issue.split("_")[0], "")
+                for issue in engine.last_new_issues
+            }
+            has_manual = HealthState.MANUAL.value in new_values
+            severity = "error" if has_manual else "warning"
+            self.notify(
+                f"{n} new health issue{'s' if n != 1 else ''} detected."
+                " Open Health Centre to review.",
+                title="Health Scan",
+                severity=severity,
+                timeout=8,
+            )
+
+        # Ask HomeScreen to refresh its badge (it will re-read state on resume)
+        import contextlib
+
+        for screen in self.screen_stack:
+            if hasattr(screen, "on_screen_resume"):
+                with contextlib.suppress(Exception):
+                    screen.on_screen_resume()  # type: ignore[attr-defined]
+                break
+
+    def on_scan_interval_changed(self, message: ScanIntervalChanged) -> None:
+        """Handle a change to the health scan interval from SettingsScreen."""
+        if self._scan_timer is not None:
+            self._scan_timer.stop()
+            self._scan_timer = None
+
+        seconds = _SCAN_INTERVAL_SECONDS.get(message.interval)
+        if seconds is not None:
+            self._scan_timer = self.set_interval(seconds, self._scheduled_health_scan)
+            self._log.info(
+                "app.scan_timer.restarted",
+                interval=message.interval,
+                seconds=seconds,
+            )
+        else:
+            self._log.info("app.scan_timer.disabled", interval=message.interval)
+
     def on_unmount(self) -> None:
         self._log.info("app.unmounted")
+        if self._scan_timer is not None:
+            self._scan_timer.stop()

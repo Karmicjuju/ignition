@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# One-shot developer setup for Ignition.
-# Installs dependencies, wires up all git hooks, and verifies the toolchain.
+# One-shot contributor setup for Ignition (cloned repo).
+# For end-user installation see scripts/install.sh or the release page.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

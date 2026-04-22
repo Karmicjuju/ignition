@@ -13,3 +13,5 @@ class AppConfigModel(BaseModel):
     density: str = "full"
     motion: str = "standard"
     automation_level: str = "observe"
+    telemetry_enabled: bool = False
+    health_scan_interval: str = "30m"

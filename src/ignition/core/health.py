@@ -59,11 +59,14 @@ class HealthEngine:
         self._last_results: dict[str, CheckResult] = {}
         # Maps check_id → target path (for AUTO chmod fixes)
         self._fix_targets: dict[str, tuple[Path, int]] = {}
+        # Check IDs that are newly bad since the last scheduled scan
+        self.last_new_issues: list[str] = []
 
     async def run_scan(
         self,
         categories: list[str] | None = None,
         activity_log: ActivityLog | None = None,
+        previous_summary: dict[str, str] | None = None,
     ) -> list[CheckResult]:
         """Run all health checks for the given categories (or all if None).
 
@@ -124,6 +127,20 @@ class HealthEngine:
             save_state(state)
         except Exception as exc:
             self._log.warning("health.scan.state_save_failed", reason=str(exc))
+
+        # Compute newly-bad check_ids for scheduled-scan toast notifications.
+        # A check is "new" if it is NEEDS_ATTENTION/MANUAL and its category was
+        # not already at that severity in previous_summary.
+        _bad = {HealthState.NEEDS_ATTENTION, HealthState.MANUAL}
+        _bad_values = {s.value for s in _bad}
+        if previous_summary is not None:
+            self.last_new_issues = [
+                r.check_id
+                for r in all_results
+                if r.state in _bad and previous_summary.get(r.category) not in _bad_values
+            ]
+        else:
+            self.last_new_issues = []
 
         issue_count = sum(
             1 for r in all_results if r.state in (HealthState.NEEDS_ATTENTION, HealthState.MANUAL)

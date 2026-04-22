@@ -50,6 +50,29 @@ class HomeScreen(Screen[None]):
         background: $background;
     }
 
+    #ignition-update-banner {
+        color: $warning;
+        text-style: bold;
+        margin-bottom: 1;
+        padding: 0 1;
+        border: round $warning;
+    }
+
+    #ignition-update-banner.hidden {
+        display: none;
+    }
+
+    #health-issue-badge {
+        color: $warning;
+        text-style: bold;
+        margin-left: 2;
+        padding: 0 1;
+    }
+
+    #health-issue-badge.hidden {
+        display: none;
+    }
+
     #main-content {
         padding: 1 2;
     }
@@ -216,6 +239,11 @@ class HomeScreen(Screen[None]):
     def _update_count(self) -> int:
         return len(self._state.available_updates)
 
+    def _health_issue_count(self) -> int:
+        """Return count of categories at NEEDS_ATTENTION or MANUAL severity."""
+        bad = {"needs_attention", "manual"}
+        return sum(1 for v in self._state.health_summary.values() if v in bad)
+
     def _get_suggestions(self) -> list[Suggestion]:
         from ignition.core.catalog import CatalogService
 
@@ -239,8 +267,24 @@ class HomeScreen(Screen[None]):
 
         suggestions = self._get_suggestions()
 
+        ignition_version = self._state.ignition_available_version
+        banner_classes = "hidden" if ignition_version is None else ""
+        banner_text = (
+            f"Ignition {ignition_version} available — view in Updates"
+            if ignition_version
+            else "Ignition update available — view in Updates"
+        )
+
+        issue_count = self._health_issue_count()
+        badge_classes = "hidden" if issue_count == 0 else ""
+
         with Vertical(id="main-content"):
             with Vertical(id="reactor-status-panel"):
+                yield Static(
+                    banner_text,
+                    id="ignition-update-banner",
+                    classes=banner_classes,
+                )
                 yield Static(
                     status_display,
                     id="status-label",
@@ -255,6 +299,11 @@ class HomeScreen(Screen[None]):
                         "Run Diagnostics",
                         id="btn-diagnostics",
                         tooltip="Scan all subsystems for issues and report health status.",
+                    )
+                    yield Static(
+                        f"{issue_count} issue{'s' if issue_count != 1 else ''}",
+                        id="health-issue-badge",
+                        classes=badge_classes,
                     )
                     yield Button(
                         "Sync Access",
@@ -325,6 +374,35 @@ class HomeScreen(Screen[None]):
                     yield Static("No recent activity.", id="activity-empty")
 
         yield Footer()
+
+    def on_screen_resume(self) -> None:
+        """Refresh dynamic indicators from current state when this screen regains focus."""
+        from ignition.core.state import load_state
+
+        fresh = load_state()
+        self._state = fresh
+
+        # Refresh health issue badge
+        issue_count = self._health_issue_count()
+        import contextlib
+
+        with contextlib.suppress(Exception):
+            badge = self.query_one("#health-issue-badge", Static)
+            badge.update(f"{issue_count} issue{'s' if issue_count != 1 else ''}")
+            if issue_count == 0:
+                badge.add_class("hidden")
+            else:
+                badge.remove_class("hidden")
+
+        # Refresh Ignition update banner
+        ignition_version = self._state.ignition_available_version
+        with contextlib.suppress(Exception):
+            banner = self.query_one("#ignition-update-banner", Static)
+            if ignition_version is not None:
+                banner.update(f"Ignition {ignition_version} available — view in Updates")
+                banner.remove_class("hidden")
+            else:
+                banner.add_class("hidden")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         from ignition.ui.screens.activity import ActivityScreen

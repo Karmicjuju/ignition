@@ -205,7 +205,7 @@ async def test_escape_returns_to_home(isolated_paths: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_all_radio_sets_present(isolated_paths: Path) -> None:
-    """SettingsScreen must contain all five RadioSet widgets (including release channel)."""
+    """SettingsScreen must contain all six RadioSet widgets."""
     save_state(_complete_state())
     async with IgnitionApp(demo_mode=False).run_test() as pilot:
         screen = await _navigate_to_settings(pilot)
@@ -217,6 +217,7 @@ async def test_all_radio_sets_present(isolated_paths: Path) -> None:
             "radio-motion",
             "radio-automation",
             "radio-channel",
+            "radio-scan-interval",
         }
         found_ids = {rs.id for rs in screen.query(RadioSet) if rs.id}
         assert found_ids == expected_ids, f"Expected RadioSet IDs {expected_ids}, found {found_ids}"
